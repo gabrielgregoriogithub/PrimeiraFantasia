@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="Character3DProfile" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/characters/character_3d_profile.gd" id="1"]
+[ext_resource type="PackedScene" path="res://assets/characters/warrior/warrior_animated_v5.glb" id="2"]
+
+[resource]
+script = ExtResource("1")
+character_id = "warrior"
+archetype = "Humanoid_Melee"
+model = ExtResource("2")
+model_scale = 0.68
+animations = {&"Idle":["Idle_A","Idle"],&"IdleB":["Idle_B"],&"IdleC":["Idle_C"],&"IdleLowHP":["Idle_LowHP"],&"Selected":["Selected"],&"Walk":["Walk"],&"Run":["Run"],&"TurnLeft":["Turn_Left_90"],&"TurnRight":["Turn_Right_90"],&"Turn180":["Turn_180"],&"AttackLightB":["Attack_Light_B"],&"AttackLightC":["Attack_Light_C"],&"AttackHeavy":["Attack_Heavy"],&"Block":["Block"],&"Hit":["Hit"],&"HitFront":["Hit_Front"],&"HitLeft":["Hit_Left"],&"HitRight":["Hit_Right"],&"HitHeavy":["Hit_Heavy"],&"Death":["Death"],&"Victory":["Victory"],&"SkillPowerAttack":["Skill_PowerAttack"],&"SkillThrowSword":["Skill_ThrowSword"],&"SkillWhirlwind":["Skill_Whirlwind"],&"SkillDefend":["Skill_Defend"]}
+basic_attack_variations = ["Attack_Light_A","Attack_Light_B","Attack_Light_C"]
+animation_events = {"attack_light":0.333,"attack_heavy":0.7,"death_ground":1.42,"footstep_left":0.18,"footstep_right":0.65}
+skill_visuals = {"powerAttack":{"animation":"SkillPowerAttack","impact_time":0.5,"vfx":"power","hit_stop":"light","match":{"kind":"power-attack"}},"throwSword":{"animation":"SkillThrowSword","impact_time":0.433,"vfx":"throw","hit_stop":"light","match":{"projectile":"blade"}},"spinAttack":{"animation":"SkillWhirlwind","impact_time":0.733,"vfx":"whirlwind","hit_stop":"heavy","match":{"kind":"spin-attack"}},"defend":{"animation":"SkillDefend","impact_time":0.333,"vfx":"defend","hit_stop":"none","match":{"kind":"defend"}}}
+capabilities = {&"weapon":true,&"projectile":true,&"turn_animations":true,&"low_hp":true,&"idle_variations":true,&"attack_variations":true,&"directional_hit":true,&"block":true,&"look_at":true}
+bone_map = {"root":"Root","hips":"Hips","head":"Head","neck":"Neck","hand_r":"Hand_R","hand_l":"Hand_L","foot_l":"Foot_L","foot_r":"Foot_R"}
+socket_map = {"weapon_r":"WeaponSocket_R","projectile_origin":"WeaponSocket_R","vfx_chest":"Chest","damage_number":"Head"}
+weapon = {"type":"sword","socket":"WeaponSocket_R","tip_socket":"SwordTip","base_socket":"SwordBase"}
+equipment = {}
+mesh_scale_overrides = {}
+audio_profile = {"weapon":"sword","footstep":"armored","voice":"warrior"}

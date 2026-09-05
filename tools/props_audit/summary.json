@@ -1,0 +1,47 @@
+{
+  "root": "C:\\Users\\gabri\\Downloads\\evolução pvp 2d\\props",
+  "total_files": 4188,
+  "extensions": {
+    ".blend": 471,
+    ".fbx": 795,
+    ".txt": 8,
+    ".mtl": 794,
+    ".obj": 794,
+    ".jpg": 8,
+    ".url": 3,
+    ".dae": 148,
+    ".glb": 148,
+    ".stl": 148,
+    ".bin": 176,
+    ".gltf": 354,
+    ".png": 336,
+    ".ini": 5
+  },
+  "top_folders": {
+    "Cute Fish Pack - Feb 2020-20260825T021229Z-1-001": 210,
+    "fantasyTown_0.1": 892,
+    "Medieval Village MegaKit[Standard]": 936,
+    "Modular Dungeon Pack - Jan 2018-20260825T020759Z-1-001": 164,
+    "Modular Medieval Buildings - Jul 2017-20260825T020822Z-1-001": 121,
+    "RPG Asset Pack - May 2017-20260825T020849Z-1-001": 65,
+    "Ships by @Quaternius-20260825T021555Z-1-001": 27,
+    "Textured Stylized Trees - May 2020-20260825T020944Z-1-001": 200,
+    "Ultimate Fantasy RTS - Aug 2022-20260825T020634Z-1-001": 780,
+    "Ultimate Monsters-20260825T021509Z-1-001": 260,
+    "Ultimate RPG Items Pack - Aug 2019-20260825T020729Z-1-001": 533
+  },
+  "categories": {
+    "water": 256,
+    "animals": 23,
+    "vegetation": 328,
+    "uncategorized": 1415,
+    "props": 169,
+    "architecture": 1387,
+    "terrain": 131,
+    "equipment": 473,
+    "ui": 6
+  },
+  "image_count": 344,
+  "transparent_images": 261,
+  "animated_container_images": 0
+}

@@ -1,0 +1,44 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scenes/characters/warrior_3d_test.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/characters/Warrior3D.tscn" id="2"]
+
+[sub_resource type="PlaneMesh" id="GroundMesh"]
+size = Vector2(8, 8)
+
+[sub_resource type="StandardMaterial3D" id="GroundMaterial"]
+albedo_color = Color(0.13, 0.2, 0.16, 1)
+roughness = 0.9
+
+[sub_resource type="CapsuleMesh" id="DummyMesh"]
+radius = 0.3
+height = 1.4
+
+[sub_resource type="StandardMaterial3D" id="DummyMaterial"]
+albedo_color = Color(0.55, 0.14, 0.12, 1)
+
+[node name="Warrior3DTest" type="Node3D"]
+script = ExtResource("1")
+
+[node name="Ground" type="MeshInstance3D" parent="."]
+mesh = SubResource("GroundMesh")
+material_override = SubResource("GroundMaterial")
+
+[node name="Warrior3D" parent="." instance=ExtResource("2")]
+validation_logging = true
+debug_vfx = true
+
+[node name="TargetDummy" type="MeshInstance3D" parent="."]
+position = Vector3(1.6, 0.7, -0.4)
+mesh = SubResource("DummyMesh")
+material_override = SubResource("DummyMaterial")
+
+[node name="WorldCamera" type="Camera3D" parent="."]
+transform = Transform3D(0.83205, -0.307692, 0.461538, 0, 0.83205, 0.5547, -0.5547, -0.461538, 0.692308, 4.5, 4.0, 6.0)
+projection = 1
+size = 5.5
+
+[node name="WorldLight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-55, -35, 0)
+light_energy = 1.2
+shadow_enabled = true

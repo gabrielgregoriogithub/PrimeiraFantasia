@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://mgbevbe0t8ak"
+
+[deps]
+
+files=["res://tools/props_audit/inventory.bytes.translation", "res://tools/props_audit/inventory.category.translation", "res://tools/props_audit/inventory.extension.translation", "res://tools/props_audit/inventory.frames.translation", "res://tools/props_audit/inventory.has.translation", "res://tools/props_audit/inventory.height.translation", "res://tools/props_audit/inventory.mode.translation", "res://tools/props_audit/inventory.name.translation", "res://tools/props_audit/inventory.relative.translation", "res://tools/props_audit/inventory.top.translation", "res://tools/props_audit/inventory.transparent.translation", "res://tools/props_audit/inventory.width.translation"]
+
+source_file="res://tools/props_audit/inventory.csv"
+dest_files=["res://tools/props_audit/inventory.bytes.translation", "res://tools/props_audit/inventory.category.translation", "res://tools/props_audit/inventory.extension.translation", "res://tools/props_audit/inventory.frames.translation", "res://tools/props_audit/inventory.has.translation", "res://tools/props_audit/inventory.height.translation", "res://tools/props_audit/inventory.mode.translation", "res://tools/props_audit/inventory.name.translation", "res://tools/props_audit/inventory.relative.translation", "res://tools/props_audit/inventory.top.translation", "res://tools/props_audit/inventory.transparent.translation", "res://tools/props_audit/inventory.width.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

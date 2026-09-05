@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="Character3DProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/characters/character_3d_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+character_id = "archer"
+archetype = "Humanoid_Ranged"
+animations = {&"Idle":["Idle_A","Idle"],&"Walk":["Walk"],&"Run":["Run"],&"AttackLight":["Bow_Shot"],&"Hit":["Hit"],&"Death":["Death"]}
+basic_attack_variations = ["Bow_Shot"]
+animation_events = {"projectile_spawn":0.38,"footstep_left":0.2,"footstep_right":0.7}
+capabilities = {&"weapon":true,&"projectile":true,&"run":true,&"look_at":true,&"directional_hit":false}
+socket_map = {"weapon_l":"Hand_L","weapon_r":"Hand_R","projectile_origin":"ProjectileOrigin","damage_number":"Head"}
+weapon = {"type":"bow","socket":"Hand_L","secondary_socket":"Hand_R","projectile_origin":"ProjectileOrigin"}
+audio_profile = {"weapon":"bow","footstep":"light_armor","voice":"archer"}

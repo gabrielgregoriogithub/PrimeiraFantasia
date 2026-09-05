@@ -1,0 +1,1 @@
+{"character_id":"warrior","version":3,"archetype":"Humanoid_Melee","blend":"Warrior_Animated_V3.blend","model":"warrior_animated_v3.glb","profile":"warrior_3d_profile.tres","skeleton":"WarriorSkeleton","front":"-Z in Godot","sockets":["WeaponSocket_R","Head","Chest"],"required_actions":["Idle_A","Walk","Hit","Death"]}

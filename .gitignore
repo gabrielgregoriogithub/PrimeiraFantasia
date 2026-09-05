@@ -1,0 +1,33 @@
+.godot/
+*.translation
+export.cfg
+export_presets.cfg
+
+# Generated QA captures and rejected/local working sources.
+artifacts/
+.warrior_sources/
+tools/tmp_shots/
+graphify-out/
+
+# Blender recovery/autosave and transient files. Production .blend/.glb/.png
+# under assets/ remain versionable by design.
+*.blend1
+*.blend2
+*.blend@
+*.tmp
+*.temp
+*.bak
+*.autosave
+
+# Local execution output.
+*.log
+run_log*.txt
+__pycache__/
+*.pyc
+
+# OS/editor noise.
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

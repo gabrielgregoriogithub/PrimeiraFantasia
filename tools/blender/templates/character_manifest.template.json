@@ -1,0 +1,1 @@
+{"character_id":"character","version":1,"archetype":"Humanoid_Melee","blend":"character_v1.blend","model":"character_v1.glb","skeleton":"CharacterSkeleton","front":"-Z in Godot","sockets":[],"required_bones":["Root","Hips","Spine","Chest","Head","Hand_R","Foot_L","Foot_R"],"required_actions":["Idle","Walk","Hit","Death"]}
