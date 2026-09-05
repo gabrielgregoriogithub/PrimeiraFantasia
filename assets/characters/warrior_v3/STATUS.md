@@ -1,75 +1,78 @@
 # Warrior_V3 — fonte de verdade
 
-Última atualização: 2026-09-05 01:43:03 -03:00
+Última atualização: 2026-09-05 (America/Sao_Paulo)
 
 ## Objetivo
 
-Produzir `Warrior_V3.glb` por uma pipeline externa de asset (`reference -> concept -> raw mesh -> visual QA -> rig/skinning -> equipment/sockets -> animations -> Godot integration -> in-game QA`), mantendo gameplay e o Guerreiro legado intactos até aprovação.
+Produzir `Warrior_V3.glb` pela pipeline `reference -> concept -> raw mesh -> visual QA -> rig/skinning -> equipment/sockets -> animations -> Godot integration -> in-game QA`, mantendo gameplay e Guerreiro legado intactos até aprovação.
 
 ## Estado atual
 
-`STAGE 0 — DONE_AND_PRESENT`. A estrutura isolada e esta auditoria existem. Nenhum asset Warrior_V3 foi produzido. Alegações de aprovação presentes na conversa não são evidência de arquivos ou jobs concluídos.
+`STAGE 1 — DONE_AND_PRESENT`. Design congelado, turnaround canônico e vistas normalizadas existem fisicamente e passaram em todos os critérios do QA do concept. `STAGE 2` continua `NOT_STARTED`; nenhum asset 3D foi criado nesta execução.
 
 ## Matriz de stages
 
 | Stage | Status | Evidência |
 |---|---|---|
-| 0 — audit / setup | DONE_AND_PRESENT | Este `STATUS.md`; diretórios `reference/`, `concept/`, `raw/`, `rigged/`, `animations/`, `equipment/`, `previews/`, `final/` e `tools/warrior_v3/`. |
-| 1 — reference / concept | NOT_STARTED | Nenhum arquivo V3 em `reference/` ou `concept/`; nenhum job/log de geração encontrado. |
-| 2 — raw 3D mesh | NOT_STARTED | Nenhum `Warrior_V3_RAW.glb`, GLTF, FBX, OBJ ou Blend encontrado. |
-| 3 — rig | NOT_STARTED | Nenhum `Warrior_V3_RIGGED` e nenhum mapeamento de skeleton V3 encontrado. |
-| 4 — sword/shield sockets | NOT_STARTED | Nenhum `WarriorSword.glb`, `WarriorShield.glb`, `WeaponSocket_R` ou `OffhandSocket_L` pertencente ao V3. |
-| 5 — animations | NOT_STARTED | Nenhuma biblioteca/clip V3 e nenhum log de retarget. |
-| 6 — Godot integration | NOT_STARTED | Nenhum profile, scene, resource ou flag `use_warrior_v3`. |
-| 7 — UI | PARTIAL | UI world-space/bounds foi trabalhada e capturada somente com o Guerreiro legado em `artifacts/warrior_polish/`; nunca validada com V3. |
-| 8 — final QA | NOT_STARTED | Houve uma resposta textual de QA, mas não existia asset V3 para testar. |
+| 0 — audit / setup | DONE_AND_PRESENT | Estrutura isolada, Git local e baseline `291ee67`. |
+| 1 — reference / concept | DONE_AND_PRESENT | `WARRIOR_V3_DESIGN_LOCK.md`, folha canônica, master, cinco vistas 1536×1536, spec, provenance e QA completo. |
+| 2 — raw 3D mesh | NOT_STARTED | Nenhum `Warrior_V3_RAW.glb` ou `.blend` V3. |
+| 3 — rig | NOT_STARTED | Nenhum rig V3. |
+| 4 — sword/shield sockets | NOT_STARTED | Nenhum equipamento/socket V3. |
+| 5 — animations | NOT_STARTED | Nenhuma animação V3. |
+| 6 — Godot integration | NOT_STARTED | Nenhuma cena/profile/flag V3. |
+| 7 — UI | PARTIAL | Trabalho existente aplica-se somente ao Guerreiro legado. |
+| 8 — final QA | NOT_STARTED | Não existe asset 3D V3 para QA final. |
 
-## Inputs existentes
+## Autoridades do Stage 1
 
-- Nenhum input com identidade `Warrior_V3` foi encontrado.
-- Não há reference/concept V3 persistido.
-- Não há job ID, resposta de API ou log Tripo/Meshy/Rodin/Hunyuan.
+- `concept/WARRIOR_V3_DESIGN_LOCK.md` — contrato objetivo.
+- `concept/warrior_v3_master.png` — autoridade frontal final.
+- `concept/warrior_v3_turnaround_canonical.png` — autoridade multiângulo.
+- `concept/warrior_v3_concept_spec.md` — especificação de produção.
+- `concept/PROVENANCE.md` — histórico de geração, rejeições e simplificações.
 
-## Outputs existentes
+## Vistas normalizadas
 
-- Nenhum output Warrior_V3.
-- Legado, fora da pipeline V3: `assets/characters/warrior/warrior_animated_v1.glb` até `warrior_animated_v5.glb`.
-- Fonte legada: `.warrior_sources/warrior_animated_v5.blend`.
-- Protótipo rejeitado V2: `.warrior_sources/v2/warrior_v2_base.blend` e `.glb`.
-- QA rejeitado V2: `artifacts/warrior_v2_gate/warrior_v2_{north,east,south,west}.png`.
-- Capturas do Guerreiro legado: `artifacts/warrior_polish/`.
+| Arquivo | Resolução | Altura visual | Ground line |
+|---|---:|---:|---:|
+| `warrior_v3_master.png` | 1536×1536 | 1200 px | Y=1360 |
+| `warrior_v3_front.png` | 1536×1536 | 1200 px | Y=1360 |
+| `warrior_v3_back.png` | 1536×1536 | 1200 px | Y=1360 |
+| `warrior_v3_left.png` | 1536×1536 | 1200 px | Y=1360 |
+| `warrior_v3_right.png` | 1536×1536 | 1200 px | Y=1360 |
+| `warrior_v3_3q_front.png` | 1536×1536 | 1200 px | Y=1360 |
 
-## Ferramentas disponíveis
+## Visual QA
 
-- Blender 4.5.11 portátil: AVAILABLE por caminho absoluto em `C:/Users/gabri/Tools/blender-4.5.11/blender-4.5.11-windows-x64/blender.exe` (não está no PATH).
-- Godot 4.7.2: AVAILABLE por caminho absoluto.
-- Automação Blender legada para rig/animação/export: AVAILABLE em `tools/blender/`; não é uma pipeline V3 e não deve ser reutilizada como gerador do corpo final.
-- Auditoria/captura GLB no Godot: AVAILABLE (`tools/warrior_animation_audit.gd`, `tools/capture_warrior_gameplay.gd`).
-- `uv`, `git`, `node`: AVAILABLE. `python` independente não está no PATH; Blender inclui seu próprio Python.
-- Tripo CLI/API: NOT AVAILABLE.
-- Meshy CLI/API: NOT AVAILABLE.
-- Assimp e gltf-transform: NOT AVAILABLE.
-- Ferramenta integrada de geração de imagem da sessão: AVAILABLE para concept raster, mas não produz mesh 3D.
+| Critério | Resultado | Observação |
+|---|---|---|
+| IDENTITY | PASS | Cabelo azul, faixa creme, scarf vermelho e aventureiro leve inequívocos. |
+| PROPORTIONS | PASS | Relação cabeça/corpo e comprimentos normalizados; linguagem 5–5,5 cabeças. |
+| FRONT SILHOUETTE | PASS | T-pose limpa, membros separados, mãos e botas completos. |
+| SIDE SILHOUETTE | PASS | Perfis opostos, mesmo corpo e volumes compatíveis. |
+| BACK CONSISTENCY | PASS | Costas usam as mesmas camadas; nenhuma roupa/strap/pouch inventado. |
+| HAIR CONSISTENCY | PASS | Crown, largura lateral e volume traseiro coerentes. |
+| SCARF CONSISTENCY | PASS | Uma gola e uma única cauda curta posterior esquerda. |
+| CLOTHING CONSISTENCY | PASS | Jerkin, cinto, bracers, calças e botas seguem o Design Lock. |
+| T-POSE SUITABILITY | PASS | Braços/pernas separados, mãos e pés visíveis; oclusão natural apenas nos perfis ortográficos. |
+| IMAGE-TO-3D SUITABILITY | PASS | Autoridade única, vistas normalizadas e contrato explícito para detalhes ocultos. |
 
-## APIs (presença, nunca valores)
+## Simplificações aprovadas
 
-- `TRIPO_API_KEY`: NOT AVAILABLE
-- `OPENAI_API_KEY`: NOT AVAILABLE
-- `MESHY_API_KEY`: NOT AVAILABLE
-- `RODIN_API_KEY`: NOT AVAILABLE
-- `STABILITY_API_KEY`: NOT AVAILABLE
-- `HUNYUAN3D_API_KEY`: NOT AVAILABLE
+- Zero pouches.
+- Zero correias diagonais.
+- Um cinto horizontal.
+- Uma única cauda curta posterior esquerda no scarf.
+- Elementos de braço e botas espelhados.
 
 ## Git
 
-- Este diretório do jogo não contém `.git` próprio.
-- O Git ascendente encontrado é `C:/Users/gabri/.git`, branch `main`, remote `Professional_Profile.git`; ele não representa com segurança o histórico deste projeto.
-- `git status` e histórico do jogo não são determináveis como repositório independente. Não há commits verificáveis relacionados ao Warrior_V3.
-
-## Diagnóstico de recuperação
-
-A causa comprovada para a ausência do V3 é: as etapas 1–8 foram avançadas apenas por afirmações textuais na conversa. Não existe evidência de execução de geração externa, upload, arquivo salvo, job remoto, commit, branch alternativa ou output temporário V3. As APIs 3D estavam indisponíveis. Não há evidência de que arquivos V3 tenham sido apagados ou sobrescritos.
+- Repositório: `C:/Users/gabri/Downloads/modo aventura 2d/prototipoPVP-Godot/.git`.
+- Branch: `main`.
+- Baseline: `291ee67 baseline before Warrior V3 reconstruction`.
+- Commit de conclusão do Stage 1: `complete Warrior V3 concept turnaround` (consultar o HEAD do repositório).
 
 ## Próximo gate
 
-Executar de verdade **STAGE 1 — reference / concept** e persistir os arquivos aprovados em `reference/` e `concept/`, acompanhados de prompt/spec e manifesto de origem. Não iniciar image-to-3D antes desse output existir e ser aprovado.
+Stage 2 — geração e QA do raw mesh — está liberado pelo concept, mas não foi iniciado. Qualquer execução futura deve usar Design Lock + master + turnaround canônico e respeitar o hard gate do raw mesh.
