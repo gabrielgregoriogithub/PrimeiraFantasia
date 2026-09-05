@@ -8,7 +8,7 @@ Produzir `Warrior_V3.glb` pela pipeline `reference -> concept -> raw mesh -> vis
 
 ## Estado atual
 
-`STAGE 1 — DONE_AND_PRESENT`. Design congelado, turnaround canônico e vistas normalizadas existem fisicamente e passaram em todos os critérios do QA do concept. `STAGE 2` continua `NOT_STARTED`; nenhum asset 3D foi criado nesta execução.
+`STAGE 1 — DONE_AND_PRESENT`. `STAGE 2 — DONE_AND_PRESENT`: candidate_01 recuperado com cleanup local no Blender e aprovado nos gates RAW. `raw/Warrior_V3_RAW.glb` presente: 21.501 triângulos, 1 material, textura 2048×2048. Original intocado; recuperação sem créditos adicionais. Histórico Tripo: 270 créditos.
 
 ## Matriz de stages
 
@@ -16,7 +16,7 @@ Produzir `Warrior_V3.glb` pela pipeline `reference -> concept -> raw mesh -> vis
 |---|---|---|
 | 0 — audit / setup | DONE_AND_PRESENT | Estrutura isolada, Git local e baseline `291ee67`. |
 | 1 — reference / concept | DONE_AND_PRESENT | `WARRIOR_V3_DESIGN_LOCK.md`, folha canônica, master, cinco vistas 1536×1536, spec, provenance e QA completo. |
-| 2 — raw 3D mesh | NOT_STARTED | Nenhum `Warrior_V3_RAW.glb` ou `.blend` V3. |
+| 2 — raw 3D mesh | DONE_AND_PRESENT | `raw/Warrior_V3_RAW.glb`; QA PASS na seção SALVAGE candidate_01 de `raw/RAW_QA.md`; dez renders e comparação antes/depois/concept. |
 | 3 — rig | NOT_STARTED | Nenhum rig V3. |
 | 4 — sword/shield sockets | NOT_STARTED | Nenhum equipamento/socket V3. |
 | 5 — animations | NOT_STARTED | Nenhuma animação V3. |
@@ -75,4 +75,4 @@ Produzir `Warrior_V3.glb` pela pipeline `reference -> concept -> raw mesh -> vis
 
 ## Próximo gate
 
-Stage 2 — geração e QA do raw mesh — está liberado pelo concept, mas não foi iniciado. Qualquer execução futura deve usar Design Lock + master + turnaround canônico e respeitar o hard gate do raw mesh.
+Stage 2 concluído após recuperação autorizada do candidate_01. Fivela e botões traseiros removidos; 2,62% das faces envolvidas. Permanecem cinco contatos multi-face necessários em lábios/ferragem, documentados no QA. Nenhuma deformação com rig foi testada. Parada após RAW QA: rig, animações, equipamentos/sockets e Godot não iniciados. Nenhum candidate_04; nenhum crédito adicional.

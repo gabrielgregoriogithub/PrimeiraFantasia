@@ -1,0 +1,30 @@
+[
+    {
+        "view":  "front",
+        "path":  "concept/warrior_v3_front.png",
+        "sha256":  "7596A8FD86A49CF2F095227B18BBF7E75F7987EF858656C6F0759ED1C751FBF5",
+        "file_token":  "file_affd0fb7-da6e-46db-982c-82cd1e5bd3cb",
+        "uploaded_at":  "2026-09-05T05:54:01.3072598Z"
+    },
+    {
+        "view":  "left",
+        "path":  "concept/warrior_v3_left.png",
+        "sha256":  "0D7D75746B47C0811609CD008796B9B176FDDEC216F74F3DD1BF469143A4D59C",
+        "file_token":  "file_d7162bc9-1ce9-49b5-b0d2-de8c5970dff1",
+        "uploaded_at":  "2026-09-05T05:54:02.0164351Z"
+    },
+    {
+        "view":  "back",
+        "path":  "concept/warrior_v3_back.png",
+        "sha256":  "C1DCE4E08800C412BEA8A7180249D8E73D151301191179DDE823D319FA99A0FB",
+        "file_token":  "file_349b7acd-7955-4b58-864d-71cf1189a484",
+        "uploaded_at":  "2026-09-05T05:54:02.7025571Z"
+    },
+    {
+        "view":  "right",
+        "path":  "concept/warrior_v3_right.png",
+        "sha256":  "5E048FCFF0480956B36DA0417B782186DC7F72070B969499F5E2AC3641AD4522",
+        "file_token":  "file_7ddd5b74-9b00-476e-b27e-365522569e83",
+        "uploaded_at":  "2026-09-05T05:54:03.3327461Z"
+    }
+]

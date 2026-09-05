@@ -1,0 +1,30 @@
+{
+  "source": "Warrior_V3_candidate_01.fbx",
+  "source_sha256": "c4ebe637a13fbb8d73ee0c3cd2e073afb3b14b89750c3a509cf271b75ec983a9",
+  "blender": "4.5.11 LTS",
+  "timestamp": "2026-09-05T05:58:03.346220+00:00",
+  "operation": "FBX import and GLB serialization only; no mesh edits, orientation override, scale normalization or rigging",
+  "meshes": [
+    {
+      "name": "tripo_node_f0980b28",
+      "vertices": 11257,
+      "faces": 12182,
+      "quads": 9680,
+      "triangles": 21862
+    }
+  ],
+  "images": [
+    {
+      "name": "tripo_image_f0980b28_0",
+      "size": [
+        2048,
+        2048
+      ],
+      "filepath": "C:\\Users\\gabri\\Downloads\\modo aventura 2d\\prototipoPVP-Godot\\assets\\characters\\warrior_v3\\raw\\candidates\\tripo_model_f0980b28-dcbf-4cd3-bc36-83a3f02d64b5.fbm\\Color.jpg",
+      "packed": true,
+      "has_data": true
+    }
+  ],
+  "glb_sha256": "92b6f25a524919251f0611dc1865f7fa28946fb13aea41e3abcf238fb1b3be52",
+  "glb_bytes": 1314300
+}

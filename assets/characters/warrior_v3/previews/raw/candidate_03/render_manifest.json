@@ -1,0 +1,139 @@
+{
+    "source_sha256":  "859920d60f9eed706cc84a5062e276ec8790830019def79f19a04a1ea076a8aa",
+    "renderer":  "Blender Cycles CPU",
+    "samples":  24,
+    "asset_modified":  false,
+    "forward_axis_assumption":  "Camera labels use +X front and -X back for comparison. Candidate has faces on both sides, so no coherent anatomical front/back exists. No orientation correction.",
+    "cameras":  {
+                    "front":  {
+                                  "position":  [
+                                                   3.9921875,
+                                                   0.0,
+                                                   0.0
+                                               ],
+                                  "target":  [
+                                                 0.0,
+                                                 0.0,
+                                                 0.0
+                                             ],
+                                  "ortho_scale":  1.157734375
+                              },
+                    "back":  {
+                                 "position":  [
+                                                  -3.9921875,
+                                                  0.0,
+                                                  0.0
+                                              ],
+                                 "target":  [
+                                                0.0,
+                                                0.0,
+                                                0.0
+                                            ],
+                                 "ortho_scale":  1.157734375
+                             },
+                    "left":  {
+                                 "position":  [
+                                                  0.0,
+                                                  -3.9921875,
+                                                  0.0
+                                              ],
+                                 "target":  [
+                                                0.0,
+                                                0.0,
+                                                0.0
+                                            ],
+                                 "ortho_scale":  1.1577344095706938
+                             },
+                    "right":  {
+                                  "position":  [
+                                                   0.0,
+                                                   3.9921875,
+                                                   0.0
+                                               ],
+                                  "target":  [
+                                                 0.0,
+                                                 0.0,
+                                                 0.0
+                                             ],
+                                  "ortho_scale":  1.157734375
+                              },
+                    "3q_front":  {
+                                     "position":  [
+                                                      2.7798025608062744,
+                                                      -2.7798025608062744,
+                                                      0.6949506402015686
+                                                  ],
+                                     "target":  [
+                                                    0.0,
+                                                    0.0,
+                                                    0.0
+                                                ],
+                                     "ortho_scale":  1.1712923443317413
+                                 },
+                    "3q_back":  {
+                                    "position":  [
+                                                     -2.7798025608062744,
+                                                     2.7798025608062744,
+                                                     0.6949506402015686
+                                                 ],
+                                    "target":  [
+                                                   0.0,
+                                                   0.0,
+                                                   0.0
+                                               ],
+                                    "ortho_scale":  1.1760334384441375
+                                },
+                    "isometric_game_camera":  {
+                                                  "position":  [
+                                                                   2.1901731491088867,
+                                                                   -2.1901731491088867,
+                                                                   2.5186989307403564
+                                                               ],
+                                                  "target":  [
+                                                                 0.0,
+                                                                 0.0,
+                                                                 0.0
+                                                             ],
+                                                  "ortho_scale":  1.0281835687160492
+                                              },
+                    "detail_head_front":  {
+                                              "position":  [
+                                                               3.9921875,
+                                                               0.0,
+                                                               0.3343456983566284
+                                                           ],
+                                              "target":  [
+                                                             0.0,
+                                                             0.0,
+                                                             0.3343456983566284
+                                                         ],
+                                              "ortho_scale":  0.3792578125
+                                          },
+                    "detail_head_back":  {
+                                             "position":  [
+                                                              -3.9921875,
+                                                              0.0,
+                                                              0.3343456983566284
+                                                          ],
+                                             "target":  [
+                                                            0.0,
+                                                            0.0,
+                                                            0.3343456983566284
+                                                        ],
+                                             "ortho_scale":  0.3792578125
+                                         },
+                    "detail_hands_top":  {
+                                             "position":  [
+                                                              0.0,
+                                                              0.0,
+                                                              4.181816577911377
+                                                          ],
+                                             "target":  [
+                                                            0.0,
+                                                            0.0,
+                                                            0.18962889909744263
+                                                        ],
+                                             "ortho_scale":  1.0248046875
+                                         }
+                }
+}

@@ -1,0 +1,96 @@
+{
+  "original": {
+    "sha256": "92b6f25a524919251f0611dc1865f7fa28946fb13aea41e3abcf238fb1b3be52",
+    "images_sha256": [
+      "420196f5b9f2107794c928c0d36fa36148ea6ad3c9d000d7c8a08eb8d67bebf6"
+    ],
+    "materials": [
+      {
+        "doubleSided": true,
+        "name": "tripo_mat_f0980b28",
+        "pbrMetallicRoughness": {
+          "baseColorTexture": {
+            "index": 0
+          },
+          "metallicFactor": 0,
+          "roughnessFactor": 0.8999999761581421
+        }
+      }
+    ],
+    "skins": 0,
+    "animations": 0
+  },
+  "cleaned": {
+    "sha256": "dd199f76f39c5b1de37ad7f00ba2d338620edff4fb3dee44d5469bb6befe28b0",
+    "images_sha256": [
+      "420196f5b9f2107794c928c0d36fa36148ea6ad3c9d000d7c8a08eb8d67bebf6"
+    ],
+    "materials": [
+      {
+        "doubleSided": true,
+        "name": "tripo_mat_f0980b28",
+        "pbrMetallicRoughness": {
+          "baseColorTexture": {
+            "index": 0
+          },
+          "metallicFactor": 0,
+          "roughnessFactor": 0.8999999761581421
+        }
+      }
+    ],
+    "skins": 0,
+    "animations": 0
+  },
+  "original_unchanged": true,
+  "texture_bytes_identical": true,
+  "serialized_protected": {
+    "faces": 21290,
+    "missing_or_position_changed": [],
+    "max_uv_delta": 0.0,
+    "max_normal_vector_delta": 0.0007054002814810486
+  },
+  "edited_hem_inverted_faces": [],
+  "renders": {
+    "front": {
+      "mean_absolute_rgb": 2.9457887649186887e-06,
+      "p99_absolute_rgb": 0.0
+    },
+    "back": {
+      "mean_absolute_rgb": 0.00048564598546363413,
+      "p99_absolute_rgb": 0.003921568393707275
+    },
+    "left": {
+      "mean_absolute_rgb": 0.00015642406651750207,
+      "p99_absolute_rgb": 0.0
+    },
+    "right": {
+      "mean_absolute_rgb": 0.00011769128468586132,
+      "p99_absolute_rgb": 0.0
+    },
+    "3q_front": {
+      "mean_absolute_rgb": 8.721108315512538e-05,
+      "p99_absolute_rgb": 0.0
+    },
+    "3q_back": {
+      "mean_absolute_rgb": 0.0004162369586993009,
+      "p99_absolute_rgb": 0.003921568393707275
+    },
+    "isometric_game_camera": {
+      "mean_absolute_rgb": 9.992552804760635e-05,
+      "p99_absolute_rgb": 0.0
+    },
+    "detail_head_front": {
+      "mean_absolute_rgb": 7.439879027515417e-06,
+      "p99_absolute_rgb": 0.0
+    },
+    "detail_head_back": {
+      "mean_absolute_rgb": 0.00011301674385322258,
+      "p99_absolute_rgb": 0.0
+    },
+    "detail_hands_top": {
+      "mean_absolute_rgb": 1.2594719009939581e-05,
+      "p99_absolute_rgb": 0.0
+    }
+  },
+  "critical_checks_pass": true
+}

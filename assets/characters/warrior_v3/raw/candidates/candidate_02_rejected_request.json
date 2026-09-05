@@ -1,0 +1,184 @@
+{
+    "candidate":  "candidate_02",
+    "api_base":  "https://openapi.tripo3d.ai/v3",
+    "endpoint":  "/generation/multiview-to-model",
+    "model":  "P2-20260801",
+    "seed":  2026090517,
+    "parameters":  {
+                       "inputs":  [
+                                      {
+                                          "front":  [
+                                                        "file_affd0fb7-da6e-46db-982c-82cd1e5bd3cb",
+                                                        "file_d7162bc9-1ce9-49b5-b0d2-de8c5970dff1",
+                                                        "file_349b7acd-7955-4b58-864d-71cf1189a484",
+                                                        "file_7ddd5b74-9b00-476e-b27e-365522569e83"
+                                                    ]
+                                      },
+                                      {
+                                          "left":  [
+                                                       "file_affd0fb7-da6e-46db-982c-82cd1e5bd3cb",
+                                                       "file_d7162bc9-1ce9-49b5-b0d2-de8c5970dff1",
+                                                       "file_349b7acd-7955-4b58-864d-71cf1189a484",
+                                                       "file_7ddd5b74-9b00-476e-b27e-365522569e83"
+                                                   ]
+                                      },
+                                      {
+                                          "back":  [
+                                                       "file_affd0fb7-da6e-46db-982c-82cd1e5bd3cb",
+                                                       "file_d7162bc9-1ce9-49b5-b0d2-de8c5970dff1",
+                                                       "file_349b7acd-7955-4b58-864d-71cf1189a484",
+                                                       "file_7ddd5b74-9b00-476e-b27e-365522569e83"
+                                                   ]
+                                      },
+                                      {
+                                          "right":  [
+                                                        "file_affd0fb7-da6e-46db-982c-82cd1e5bd3cb",
+                                                        "file_d7162bc9-1ce9-49b5-b0d2-de8c5970dff1",
+                                                        "file_349b7acd-7955-4b58-864d-71cf1189a484",
+                                                        "file_7ddd5b74-9b00-476e-b27e-365522569e83"
+                                                    ]
+                                      }
+                                  ],
+                       "model":  "P2-20260801",
+                       "model_seed":  2026090517,
+                       "texture_seed":  2026090517,
+                       "face_limit":  12000,
+                       "quad":  true,
+                       "texture":  true,
+                       "pbr":  false,
+                       "texture_quality":  "standard",
+                       "texture_alignment":  "original_image",
+                       "export_uv":  true
+                   },
+    "source_inputs":  [
+                          {
+                              "view":  "front",
+                              "path":  "concept/warrior_v3_front.png",
+                              "sha256":  "7596A8FD86A49CF2F095227B18BBF7E75F7987EF858656C6F0759ED1C751FBF5",
+                              "file_token":  "file_affd0fb7-da6e-46db-982c-82cd1e5bd3cb",
+                              "uploaded_at":  "2026-09-05T05:54:01.3072598Z"
+                          },
+                          {
+                              "view":  "left",
+                              "path":  "concept/warrior_v3_left.png",
+                              "sha256":  "0D7D75746B47C0811609CD008796B9B176FDDEC216F74F3DD1BF469143A4D59C",
+                              "file_token":  "file_d7162bc9-1ce9-49b5-b0d2-de8c5970dff1",
+                              "uploaded_at":  "2026-09-05T05:54:02.0164351Z"
+                          },
+                          {
+                              "view":  "back",
+                              "path":  "concept/warrior_v3_back.png",
+                              "sha256":  "C1DCE4E08800C412BEA8A7180249D8E73D151301191179DDE823D319FA99A0FB",
+                              "file_token":  "file_349b7acd-7955-4b58-864d-71cf1189a484",
+                              "uploaded_at":  "2026-09-05T05:54:02.7025571Z"
+                          },
+                          {
+                              "view":  "right",
+                              "path":  "concept/warrior_v3_right.png",
+                              "sha256":  "5E048FCFF0480956B36DA0417B782186DC7F72070B969499F5E2AC3641AD4522",
+                              "file_token":  "file_7ddd5b74-9b00-476e-b27e-365522569e83",
+                              "uploaded_at":  "2026-09-05T05:54:03.3327461Z"
+                          },
+                          {
+                              "view":  "front",
+                              "path":  "concept/warrior_v3_front.png",
+                              "sha256":  "7596A8FD86A49CF2F095227B18BBF7E75F7987EF858656C6F0759ED1C751FBF5",
+                              "file_token":  "file_affd0fb7-da6e-46db-982c-82cd1e5bd3cb",
+                              "uploaded_at":  "2026-09-05T05:54:01.3072598Z"
+                          },
+                          {
+                              "view":  "left",
+                              "path":  "concept/warrior_v3_left.png",
+                              "sha256":  "0D7D75746B47C0811609CD008796B9B176FDDEC216F74F3DD1BF469143A4D59C",
+                              "file_token":  "file_d7162bc9-1ce9-49b5-b0d2-de8c5970dff1",
+                              "uploaded_at":  "2026-09-05T05:54:02.0164351Z"
+                          },
+                          {
+                              "view":  "back",
+                              "path":  "concept/warrior_v3_back.png",
+                              "sha256":  "C1DCE4E08800C412BEA8A7180249D8E73D151301191179DDE823D319FA99A0FB",
+                              "file_token":  "file_349b7acd-7955-4b58-864d-71cf1189a484",
+                              "uploaded_at":  "2026-09-05T05:54:02.7025571Z"
+                          },
+                          {
+                              "view":  "right",
+                              "path":  "concept/warrior_v3_right.png",
+                              "sha256":  "5E048FCFF0480956B36DA0417B782186DC7F72070B969499F5E2AC3641AD4522",
+                              "file_token":  "file_7ddd5b74-9b00-476e-b27e-365522569e83",
+                              "uploaded_at":  "2026-09-05T05:54:03.3327461Z"
+                          },
+                          {
+                              "view":  "front",
+                              "path":  "concept/warrior_v3_front.png",
+                              "sha256":  "7596A8FD86A49CF2F095227B18BBF7E75F7987EF858656C6F0759ED1C751FBF5",
+                              "file_token":  "file_affd0fb7-da6e-46db-982c-82cd1e5bd3cb",
+                              "uploaded_at":  "2026-09-05T05:54:01.3072598Z"
+                          },
+                          {
+                              "view":  "left",
+                              "path":  "concept/warrior_v3_left.png",
+                              "sha256":  "0D7D75746B47C0811609CD008796B9B176FDDEC216F74F3DD1BF469143A4D59C",
+                              "file_token":  "file_d7162bc9-1ce9-49b5-b0d2-de8c5970dff1",
+                              "uploaded_at":  "2026-09-05T05:54:02.0164351Z"
+                          },
+                          {
+                              "view":  "back",
+                              "path":  "concept/warrior_v3_back.png",
+                              "sha256":  "C1DCE4E08800C412BEA8A7180249D8E73D151301191179DDE823D319FA99A0FB",
+                              "file_token":  "file_349b7acd-7955-4b58-864d-71cf1189a484",
+                              "uploaded_at":  "2026-09-05T05:54:02.7025571Z"
+                          },
+                          {
+                              "view":  "right",
+                              "path":  "concept/warrior_v3_right.png",
+                              "sha256":  "5E048FCFF0480956B36DA0417B782186DC7F72070B969499F5E2AC3641AD4522",
+                              "file_token":  "file_7ddd5b74-9b00-476e-b27e-365522569e83",
+                              "uploaded_at":  "2026-09-05T05:54:03.3327461Z"
+                          },
+                          {
+                              "view":  "front",
+                              "path":  "concept/warrior_v3_front.png",
+                              "sha256":  "7596A8FD86A49CF2F095227B18BBF7E75F7987EF858656C6F0759ED1C751FBF5",
+                              "file_token":  "file_affd0fb7-da6e-46db-982c-82cd1e5bd3cb",
+                              "uploaded_at":  "2026-09-05T05:54:01.3072598Z"
+                          },
+                          {
+                              "view":  "left",
+                              "path":  "concept/warrior_v3_left.png",
+                              "sha256":  "0D7D75746B47C0811609CD008796B9B176FDDEC216F74F3DD1BF469143A4D59C",
+                              "file_token":  "file_d7162bc9-1ce9-49b5-b0d2-de8c5970dff1",
+                              "uploaded_at":  "2026-09-05T05:54:02.0164351Z"
+                          },
+                          {
+                              "view":  "back",
+                              "path":  "concept/warrior_v3_back.png",
+                              "sha256":  "C1DCE4E08800C412BEA8A7180249D8E73D151301191179DDE823D319FA99A0FB",
+                              "file_token":  "file_349b7acd-7955-4b58-864d-71cf1189a484",
+                              "uploaded_at":  "2026-09-05T05:54:02.7025571Z"
+                          },
+                          {
+                              "view":  "right",
+                              "path":  "concept/warrior_v3_right.png",
+                              "sha256":  "5E048FCFF0480956B36DA0417B782186DC7F72070B969499F5E2AC3641AD4522",
+                              "file_token":  "file_7ddd5b74-9b00-476e-b27e-365522569e83",
+                              "uploaded_at":  "2026-09-05T05:54:03.3327461Z"
+                          }
+                      ],
+    "task_id":  null,
+    "credits":  null,
+    "balance_before":  {
+                           "balance":  890.00,
+                           "frozen":  0.00
+                       },
+    "generated_urls":  null,
+    "created_local_at":  "2026-09-05T05:59:39.1946208Z",
+    "status":  "submission_rejected",
+    "documentation":  "https://developers.tripo3d.ai/en/docs/generation-multiview-to-model/p",
+    "submission_response":  {
+                                "code":  1004,
+                                "status":  "error",
+                                "message":  "inputs[0].front must be a string or {url/file_token/object}",
+                                "suggestion":  "Refer to the API documentation for parameter requirements",
+                                "request_id":  "3f2ae8ec-d61d-440f-a1e4-f44dd86696c8"
+                            }
+}
