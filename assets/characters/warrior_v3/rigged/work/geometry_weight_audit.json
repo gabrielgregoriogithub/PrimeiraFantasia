@@ -1,0 +1,55 @@
+{
+  "max_position_delta_after_uniform_normalization": 1.6690058828316978e-06,
+  "mean_position_delta": 6.830897147417785e-07,
+  "raw_sha256": "dd199f76f39c5b1de37ad7f00ba2d338620edff4fb3dee44d5469bb6befe28b0",
+  "zones": {
+    "hair_head": {
+      "vertices": 5214,
+      "average_weights": {
+        "mixamorig:Head": 0.9989134287829595,
+        "mixamorig:Neck": 0.0009930031304770139,
+        "mixamorig:RightShoulder": 9.356817963547751e-05
+      }
+    },
+    "scarf": {
+      "vertices": 887,
+      "average_weights": {
+        "mixamorig:LeftArm": 0.1291449034130862,
+        "mixamorig:LeftForeArm": 0.11759865583207252,
+        "mixamorig:LeftShoulder": 0.33736724878966873,
+        "mixamorig:LeftHand": 0.002280838857903623,
+        "mixamorig:RightArm": 0.0461617494600467,
+        "mixamorig:RightShoulder": 0.10964591900283616,
+        "mixamorig:Spine2": 0.05134607831188378,
+        "mixamorig:RightForeArm": 0.0001946449680873345,
+        "mixamorig:Head": 0.08845550404796472,
+        "mixamorig:Neck": 0.035147601809970015,
+        "mixamorig:Spine1": 0.07902711760116218,
+        "mixamorig:Spine": 0.0036297430197173874
+      }
+    },
+    "mouth": {
+      "vertices": 518,
+      "average_weights": {
+        "mixamorig:Head": 0.885944595323106,
+        "mixamorig:Neck": 0.11405540431775944
+      }
+    },
+    "left_boot": {
+      "vertices": 1102,
+      "average_weights": {
+        "mixamorig:LeftLeg": 0.6372946713007714,
+        "mixamorig:LeftToeBase": 0.259279923452683,
+        "mixamorig:LeftFoot": 0.10342540798626715
+      }
+    },
+    "right_boot": {
+      "vertices": 1578,
+      "average_weights": {
+        "mixamorig:RightLeg": 0.7236132073724886,
+        "mixamorig:RightFoot": 0.12640037872898333,
+        "mixamorig:RightToeBase": 0.14998641671348453
+      }
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "source": "C:\\Users\\gabri\\Downloads\\modo aventura 2d\\prototipoPVP-Godot\\assets\\characters\\warrior_v3\\raw\\Warrior_V3_RAW.glb",
+  "sha256": "dd199f76f39c5b1de37ad7f00ba2d338620edff4fb3dee44d5469bb6befe28b0",
+  "bounds_min": [
+    -0.117919921875,
+    -0.464599609375,
+    -0.499755859375
+  ],
+  "bounds_max": [
+    0.117919921875,
+    0.464599609375,
+    0.499755859375
+  ],
+  "center": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "dimensions": [
+    0.23583984375,
+    0.92919921875,
+    0.99951171875
+  ],
+  "meshes": [
+    {
+      "name": "tripo_node_f0980b28",
+      "vertices": 24077,
+      "triangles": 21501,
+      "vertex_groups": [],
+      "unweighted": 24077
+    }
+  ],
+  "armatures": []
+}

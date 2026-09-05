@@ -1,0 +1,129 @@
+{
+  "REST_TPOSE": {},
+  "COMBAT_STANCE": {
+    "LeftArm": [
+      "X",
+      -45
+    ],
+    "RightArm": [
+      "X",
+      45
+    ],
+    "LeftForeArm": [
+      "Z",
+      -45
+    ],
+    "RightForeArm": [
+      "Z",
+      45
+    ],
+    "LeftUpLeg": [
+      "Y",
+      -10
+    ],
+    "RightUpLeg": [
+      "Y",
+      -10
+    ],
+    "LeftLeg": [
+      "Y",
+      20
+    ],
+    "RightLeg": [
+      "Y",
+      20
+    ],
+    "LeftFoot": [
+      "Y",
+      -10
+    ],
+    "RightFoot": [
+      "Y",
+      -10
+    ]
+  },
+  "RIGHT_ARM_FORWARD": {
+    "RightArm": [
+      "Z",
+      70
+    ],
+    "RightForeArm": [
+      "Z",
+      20
+    ]
+  },
+  "LEFT_ARM_FORWARD": {
+    "LeftArm": [
+      "Z",
+      -70
+    ],
+    "LeftForeArm": [
+      "Z",
+      -20
+    ]
+  },
+  "BOTH_ARMS_DOWN": {
+    "LeftArm": [
+      "X",
+      -75
+    ],
+    "RightArm": [
+      "X",
+      75
+    ]
+  },
+  "KNEE_BEND": {
+    "LeftUpLeg": [
+      "Y",
+      -35
+    ],
+    "LeftLeg": [
+      "Y",
+      70
+    ],
+    "LeftFoot": [
+      "Y",
+      -35
+    ]
+  },
+  "TORSO_TWIST_LEFT": {
+    "Spine": [
+      "Z",
+      10
+    ],
+    "Spine1": [
+      "Z",
+      10
+    ],
+    "Spine2": [
+      "Z",
+      10
+    ]
+  },
+  "TORSO_TWIST_RIGHT": {
+    "Spine": [
+      "Z",
+      -10
+    ],
+    "Spine1": [
+      "Z",
+      -10
+    ],
+    "Spine2": [
+      "Z",
+      -10
+    ]
+  },
+  "HEAD_LEFT": {
+    "Head": [
+      "Z",
+      45
+    ]
+  },
+  "HEAD_RIGHT": {
+    "Head": [
+      "Z",
+      -45
+    ]
+  }
+}

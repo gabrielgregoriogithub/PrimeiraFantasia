@@ -17,7 +17,8 @@ Produzir `Warrior_V3.glb` pela pipeline `reference -> concept -> raw mesh -> vis
 | 0 — audit / setup | DONE_AND_PRESENT | Estrutura isolada, Git local e baseline `291ee67`. |
 | 1 — reference / concept | DONE_AND_PRESENT | `WARRIOR_V3_DESIGN_LOCK.md`, folha canônica, master, cinco vistas 1536×1536, spec, provenance e QA completo. |
 | 2 — raw 3D mesh | DONE_AND_PRESENT | `raw/Warrior_V3_RAW.glb`; QA PASS na seção SALVAGE candidate_01 de `raw/RAW_QA.md`; dez renders e comparação antes/depois/concept. |
-| 3 — rig | NOT_STARTED | Nenhum rig V3. |
+| 3 — rig | DONE_AND_PRESENT | `rigged/Warrior_V3_RIGGED.glb`, `BONE_MAP.json`, `RIG_QA.md`; 23 bones, dez poses PASS, fonte Blender preservada. |
+| 3A — static preview | PASS | STATIC_GODOT_PREVIEW = PASS; cena isolada `tools/warrior_v3/WarriorV3Preview.tscn`, cinco screenshots em `previews/godot_static/`. |
 | 4 — sword/shield sockets | NOT_STARTED | Nenhum equipamento/socket V3. |
 | 5 — animations | NOT_STARTED | Nenhuma animação V3. |
 | 6 — Godot integration | NOT_STARTED | Nenhuma cena/profile/flag V3. |
@@ -75,4 +76,4 @@ Produzir `Warrior_V3.glb` pela pipeline `reference -> concept -> raw mesh -> vis
 
 ## Próximo gate
 
-Stage 2 concluído após recuperação autorizada do candidate_01. Fivela e botões traseiros removidos; 2,62% das faces envolvidas. Permanecem cinco contatos multi-face necessários em lábios/ferragem, documentados no QA. Nenhuma deformação com rig foi testada. Parada após RAW QA: rig, animações, equipamentos/sockets e Godot não iniciados. Nenhum candidate_04; nenhum crédito adicional.
+Stage 3 DONE_AND_PRESENT; STATIC_GODOT_PREVIEW = PASS. Rig Tripo humanoide com 23 bones, custo de 25 créditos, QA em dez poses e preview isolada aprovados. RAW original intacto. Próxima etapa autorizada: Stage 4, equipamentos independentes e sockets, condicionada ao seu QA. Stage 5 somente após equipamentos aprovados. Gameplay e Guerreiro legado preservados.

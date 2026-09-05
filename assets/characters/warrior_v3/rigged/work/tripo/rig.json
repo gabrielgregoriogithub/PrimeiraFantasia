@@ -1,0 +1,45 @@
+{
+    "balance_before":  {
+                           "balance":  730.00,
+                           "frozen":  0.00
+                       },
+    "time":  "2026-09-05T20:45:31.3847455Z",
+    "task_id":  "2dcc9eeb-9e93-4277-b0d8-8f732a07c6f9",
+    "source_sha256":  "DD199F76F39C5B1DE37AD7F00BA2D338620EDFF4FB3DEE44D5469BB6BEFE28B0",
+    "status":  "submitted",
+    "parameters":  {
+                       "input":  "file_11df543a-b433-441e-b744-5cb2c489b68b",
+                       "spec":  "mixamo",
+                       "model":  "v1.0-20240301",
+                       "rig_type":  "biped",
+                       "out_format":  "glb"
+                   },
+    "endpoint":  "/animations/rig",
+    "task":  {
+                 "code":  0,
+                 "status":  "success",
+                 "data":  {
+                              "type":  "animate_rig",
+                              "status":  "success",
+                              "progress":  100,
+                              "input":  {
+                                            "spec":  "mixamo",
+                                            "topology":  "biped",
+                                            "out_format":  "glb",
+                                            "original_model_id":  "1cc99113-372a-4b46-89da-70ee01677b4d"
+                                        },
+                              "output":  {
+                                             "model_url":  "https://tripo-data.rg1.data.tripo3d.com/tcli_f5db899a52af41f1886a239c0bc65fd6/20260905/2dcc9eeb-9e93-4277-b0d8-8f732a07c6f9/tripo_rigging_2dcc9eeb-9e93-4277-b0d8-8f732a07c6f9.glb?Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly90cmlwby1kYXRhLnJnMS5kYXRhLnRyaXBvM2QuY29tL3RjbGlfZjVkYjg5OWE1MmFmNDFmMTg4NmEyMzljMGJjNjVmZDYvMjAyNjA5MDUvMmRjYzllZWItOWU5My00Mjc3LWIwZDgtOGY3MzJhMDdjNmY5L3RyaXBvX3JpZ2dpbmdfMmRjYzllZWItOWU5My00Mjc3LWIwZDgtOGY3MzJhMDdjNmY5LmdsYiIsIkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTc4ODcyNzgzMn19fV19\u0026Signature=YbDLhamRM998FUNLM9oyHJpD4nv5aWPTNOVs5xXLL8txFj0XhunQ8gfKbkLRA6hFE7uFdE2mG96dUiXGJ7PJFxAYLoVbOCj6PC9Y0b-z2ogdrI5dEnwz2HbT0dt1UNWQrv0hMGw~fibtvCLN0oVhaIBaqC8Co7ADqPlcBErcyPSbzA2tnUKF9SdRV2O0AvIubB5v5LSKGCvZyItmbsnikK2njg9gBbqQG9wa~IVoJpsjdGCtre7Gs21qI31tgnOwN3PFT2RtURTb5j2OWF8D1d1EauK9Z~TZCftyIwN-sFUZCBZ4NXz42mxFxGnoubZMCpo6J0q7~r8QOWydOZwevQ__\u0026Key-Pair-Id=K1676C64NMVM2J",
+                                             "rendered_image_url":  "https://tripo-data.rg1.data.tripo3d.com/tcli_f5db899a52af41f1886a239c0bc65fd6/20260905/2dcc9eeb-9e93-4277-b0d8-8f732a07c6f9/legacy_mesh.webp?Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly90cmlwby1kYXRhLnJnMS5kYXRhLnRyaXBvM2QuY29tL3RjbGlfZjVkYjg5OWE1MmFmNDFmMTg4NmEyMzljMGJjNjVmZDYvMjAyNjA5MDUvMmRjYzllZWItOWU5My00Mjc3LWIwZDgtOGY3MzJhMDdjNmY5L2xlZ2FjeV9tZXNoLndlYnAiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE3ODg3Mjc4MzJ9fX1dfQ__\u0026Signature=ThISYU8v8geJQM2ZSLLgcNxxDXk0Oc85artrgJrJaxKP8P8Vh0-stwp6~9TkfGYW05-it0FCtusbpcSooHiIAlA8ZY4B0mgeZYkcxCredu9CprmNhow5xITHyIP9Dd-l-gPa3KAuXa00C3Bv9qPDJ5QLIQdEvFeWbu7hJV75~b12ipxycFnXHg-mIafq~y42fgBC869nxkwGacbttUjDbx4utIzcXzXYl4P7e9BziZ3ELqODCn8iRUH~N031IPJvzwXhQftTghHDkU~KDtBjl1cs8QekfeVA-rcLJKNTSAWYppG-v9P4WrarTvYjFDAnv7CWzJ7qENB4g56gYe-l-Q__\u0026Key-Pair-Id=K1676C64NMVM2J"
+                                         },
+                              "task_id":  "2dcc9eeb-9e93-4277-b0d8-8f732a07c6f9",
+                              "created_at":  "2026-09-05T20:45:49.594339Z",
+                              "completed_at":  "2026-09-05T20:46:22.361453Z",
+                              "credits_consumed":  25.00
+                          }
+             },
+    "balance_after":  {
+                          "balance":  705.00,
+                          "frozen":  0.00
+                      }
+}
