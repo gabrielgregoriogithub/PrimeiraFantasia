@@ -19,7 +19,7 @@ Produzir `Warrior_V3.glb` pela pipeline `reference -> concept -> raw mesh -> vis
 | 2 — raw 3D mesh | DONE_AND_PRESENT | `raw/Warrior_V3_RAW.glb`; QA PASS na seção SALVAGE candidate_01 de `raw/RAW_QA.md`; dez renders e comparação antes/depois/concept. |
 | 3 — rig | DONE_AND_PRESENT | `rigged/Warrior_V3_RIGGED.glb`, `BONE_MAP.json`, `RIG_QA.md`; 23 bones, dez poses PASS, fonte Blender preservada. |
 | 3A — static preview | PASS | STATIC_GODOT_PREVIEW = PASS; cena isolada `tools/warrior_v3/WarriorV3Preview.tscn`, cinco screenshots em `previews/godot_static/`. |
-| 4 — sword/shield sockets | NOT_STARTED | Nenhum equipamento/socket V3. |
+| 4 — sword/shield sockets | DONE_AND_PRESENT | GLBs independentes; variante EQUIPPABLE de 53 bones preserva rig aprovado; SOCKET QA = PASS; GODOT EQUIPMENT PREVIEW = PASS. Sete poses e quatro direções; `equipment/EQUIPMENT_QA.md`. |
 | 5 — animations | NOT_STARTED | Nenhuma animação V3. |
 | 6 — Godot integration | NOT_STARTED | Nenhuma cena/profile/flag V3. |
 | 7 — UI | PARTIAL | Trabalho existente aplica-se somente ao Guerreiro legado. |
@@ -76,4 +76,4 @@ Produzir `Warrior_V3.glb` pela pipeline `reference -> concept -> raw mesh -> vis
 
 ## Próximo gate
 
-Stage 3 DONE_AND_PRESENT; STATIC_GODOT_PREVIEW = PASS. Rig Tripo humanoide com 23 bones, custo de 25 créditos, QA em dez poses e preview isolada aprovados. RAW original intacto. Próxima etapa autorizada: Stage 4, equipamentos independentes e sockets, condicionada ao seu QA. Stage 5 somente após equipamentos aprovados. Gameplay e Guerreiro legado preservados.
+Stage 3 DONE_AND_PRESENT; STATIC_GODOT_PREVIEW = PASS; commit `378779c`. Stage 4 DONE_AND_PRESENT: SOCKET QA = PASS e GODOT EQUIPMENT PREVIEW = PASS. Recuperação com dedos articulados em variante separada, empunhaduras ajustadas e acabamento de madeira/metal. Stage 5 NOT_STARTED: pré-condições satisfeitas para auditoria de fontes de animação. RAW e rig aprovados preservados; nenhuma integração de combate.

@@ -1,0 +1,152 @@
+{
+  "original_rig_sha256": "382dac80a01b91ec841f20e55643d6f1e9752e49e1e72a88bb2425b152e2af3d",
+  "raw_sha256": "dd199f76f39c5b1de37ad7f00ba2d338620edff4fb3dee44d5469bb6befe28b0",
+  "vertices_before": 23979,
+  "vertices_after": 23979,
+  "rest_position_max_distance": 9.195255756822007e-07,
+  "original_bones_preserved": false,
+  "bones_before": 23,
+  "bones_after": 53,
+  "equipment": {
+    "WarriorSword": {
+      "vertices": 1836,
+      "bones": 0,
+      "topology_by_object": {
+        "Blade": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Guard": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Grip": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Leather wrap 00": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Leather wrap 01": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Leather wrap 02": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Leather wrap 03": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Leather wrap 04": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Leather wrap 05": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Leather wrap 06": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Leather wrap 07": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Pommel": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        }
+      }
+    },
+    "WarriorShield": {
+      "vertices": 2556,
+      "bones": 0,
+      "topology_by_object": {
+        "Shield body": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Reinforced rim": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Central reinforcement": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Rear hand grip": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Rim rivet 00": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Rim rivet 02": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Rim rivet 04": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Rim rivet 06": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Rim rivet 08": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Rim rivet 10": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Rim rivet 12": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Rear grip mounting block": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        },
+        "Rear grip mounting block.001": {
+          "boundary_edges": 0,
+          "multi_face_edges": 0,
+          "degenerate_faces": 0
+        }
+      }
+    }
+  },
+  "original_bone_matrix_max_delta": 9.864568710327148e-06,
+  "original_bone_parents_preserved": true,
+  "original_bones_preserved_within_1e_5": true
+}

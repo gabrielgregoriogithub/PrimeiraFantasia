@@ -1,0 +1,19 @@
+{
+  "WarriorSword": {
+    "triangles": 994,
+    "materials": 2,
+    "textures": [],
+    "skinned": false
+  },
+  "WarriorShield": {
+    "triangles": 1336,
+    "materials": 2,
+    "textures": [
+      [
+        1024,
+        1024
+      ]
+    ],
+    "skinned": false
+  }
+}

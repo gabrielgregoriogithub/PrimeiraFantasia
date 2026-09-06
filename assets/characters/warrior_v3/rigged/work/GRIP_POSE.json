@@ -1,0 +1,122 @@
+{
+  "mixamorig:RightHandPinky1": [
+    "X",
+    45
+  ],
+  "mixamorig:RightHandPinky2": [
+    "X",
+    35
+  ],
+  "mixamorig:RightHandPinky3": [
+    "X",
+    20
+  ],
+  "mixamorig:RightHandRing1": [
+    "X",
+    45
+  ],
+  "mixamorig:RightHandRing2": [
+    "X",
+    65
+  ],
+  "mixamorig:RightHandRing3": [
+    "X",
+    40
+  ],
+  "mixamorig:RightHandMiddle1": [
+    "X",
+    45
+  ],
+  "mixamorig:RightHandMiddle2": [
+    "X",
+    65
+  ],
+  "mixamorig:RightHandMiddle3": [
+    "X",
+    40
+  ],
+  "mixamorig:RightHandIndex1": [
+    "X",
+    45
+  ],
+  "mixamorig:RightHandIndex2": [
+    "X",
+    65
+  ],
+  "mixamorig:RightHandIndex3": [
+    "X",
+    40
+  ],
+  "mixamorig:RightHandThumb1": [
+    "Y",
+    50
+  ],
+  "mixamorig:RightHandThumb2": [
+    "Y",
+    80
+  ],
+  "mixamorig:RightHandThumb3": [
+    "Y",
+    0
+  ],
+  "mixamorig:LeftHandPinky1": [
+    "X",
+    -45
+  ],
+  "mixamorig:LeftHandPinky2": [
+    "X",
+    -35
+  ],
+  "mixamorig:LeftHandPinky3": [
+    "X",
+    -20
+  ],
+  "mixamorig:LeftHandRing1": [
+    "X",
+    -45
+  ],
+  "mixamorig:LeftHandRing2": [
+    "X",
+    -65
+  ],
+  "mixamorig:LeftHandRing3": [
+    "X",
+    -40
+  ],
+  "mixamorig:LeftHandMiddle1": [
+    "X",
+    -45
+  ],
+  "mixamorig:LeftHandMiddle2": [
+    "X",
+    -65
+  ],
+  "mixamorig:LeftHandMiddle3": [
+    "X",
+    -40
+  ],
+  "mixamorig:LeftHandIndex1": [
+    "X",
+    -45
+  ],
+  "mixamorig:LeftHandIndex2": [
+    "X",
+    -65
+  ],
+  "mixamorig:LeftHandIndex3": [
+    "X",
+    -40
+  ],
+  "mixamorig:LeftHandThumb1": [
+    "Y",
+    50
+  ],
+  "mixamorig:LeftHandThumb2": [
+    "Y",
+    80
+  ],
+  "mixamorig:LeftHandThumb3": [
+    "Y",
+    0
+  ]
+}

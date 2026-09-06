@@ -1,0 +1,46 @@
+{
+  "WarriorSword": {
+    "triangles": 998,
+    "materials": 2,
+    "textures": [],
+    "parts": [
+      "Blade",
+      "Guard",
+      "Grip",
+      "Leather wrap 00",
+      "Leather wrap 01",
+      "Leather wrap 02",
+      "Leather wrap 03",
+      "Leather wrap 04",
+      "Leather wrap 05",
+      "Leather wrap 06",
+      "Leather wrap 07",
+      "Pommel"
+    ],
+    "pivot": "Origin at center of grip; no skin"
+  },
+  "WarriorShield": {
+    "triangles": 1340,
+    "materials": 2,
+    "textures": [],
+    "parts": [
+      "Shield body",
+      "Reinforced rim",
+      "Central reinforcement",
+      "Rear hand grip",
+      "Rear forearm strap",
+      "Rim rivet 00",
+      "Rim rivet 02",
+      "Rim rivet 04",
+      "Rim rivet 06",
+      "Rim rivet 08",
+      "Rim rivet 10",
+      "Rim rivet 12"
+    ],
+    "pivot": "Origin at center of grip; no skin"
+  },
+  "orientation": {
+    "Sword": "GLB +Y blade length; +Z broad-face normal; grip origin (0,0,0)",
+    "Shield": "GLB +Y up, +Z outward/front; origin at rear hand grip"
+  }
+}
