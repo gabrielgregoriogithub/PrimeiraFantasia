@@ -55,20 +55,23 @@ jobs:
           test -s "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATES_VERSION}/web_nothreads_release.zip"
 
       - name: Import project
-        # `--display-driver headless` só tira a janela; sem GPU/X no runner,
-        # o Godot ainda tenta abrir um contexto de renderização real (GL
-        # Compatibility, conforme project.godot) pra gerar os previews de
-        # import, falha ao criá-lo e a importação vira um no-op silencioso
-        # (confirmado: exit=0, 0 arquivos importados, sem nenhum erro).
-        # `--rendering-driver dummy` força um backend de renderização falso
-        # que não depende de GPU nenhuma, então a importação roda de verdade.
+        # Confirmado pelo log verbose: com `--quit` puro, o editor abre a
+        # cena principal (run/main_scene), tenta carregar texturas que ainda
+        # não foram importadas (fresh checkout, sem .godot/imported ainda),
+        # e sai antes da fila de reimportação em segundo plano rodar de
+        # verdade — resultado: exit 0, mas 0 arquivos importados. Trocado
+        # `--quit` por `--quit-after N`, que só sai depois de N quadros,
+        # dando tempo real pra fila de import processar o projeto inteiro
+        # (~2700 recursos). Duas passadas por segurança.
         run: |
-          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless --rendering-driver dummy --verbose > /tmp/import1.log 2>&1
+          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit-after 4000 --display-driver headless --rendering-driver dummy
           e1=$?
           n1=$(find "$GITHUB_WORKSPACE/.godot/imported" -type f 2>/dev/null | wc -l)
-          wc -l /tmp/import1.log
-          echo "::notice::pass1 exit=$e1 imported=$n1 total_linhas=$(wc -l < /tmp/import1.log) | primeiras: $(head -c 400 /tmp/import1.log | tr '\n' ' ') | ultimas: $(tail -c 500 /tmp/import1.log | tr '\n' ' ')"
-          echo "::notice::pass1 grep erro/warn: $(grep -iE 'error|warn|fail|cannot|denied' /tmp/import1.log | head -c 800 | tr '\n' ' ')"
+          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit-after 4000 --display-driver headless --rendering-driver dummy
+          e2=$?
+          n2=$(find "$GITHUB_WORKSPACE/.godot/imported" -type f 2>/dev/null | wc -l)
+          nsrc=$(find "$GITHUB_WORKSPACE/assets" -type f | wc -l)
+          echo "::notice::import pass1 exit=$e1 imported=$n1 | pass2 exit=$e2 imported=$n2 | arquivos fonte em assets/=$nsrc"
 
       - name: Export Web build to a temporary directory
         shell: bash
