@@ -55,16 +55,16 @@ jobs:
           test -s "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATES_VERSION}/web_nothreads_release.zip"
 
       - name: Import project
-        # Um projeto com ~600MB de assets não termina de importar (texturas,
-        # áudio) numa única passada do editor headless antes do --quit sair;
-        # o resultado é um .pck minúsculo com quase tudo faltando (visto na
-        # prática: 7,5MB em vez de ~300MB). Repetir o import converge para o
-        # estado completo, exatamente como o workaround documentado pela
-        # comunidade Godot para esse mesmo problema em CI.
+        # `--audio-driver Dummy` faz o importador de MP3 do Godot 4.7.2
+        # segfaultar no meio da importação headless (reproduzido localmente:
+        # trava sempre logo ao reimportar o primeiro .mp3). O resultado era
+        # um .pck publicado com só 7,5MB em vez de ~300MB, quase tudo
+        # faltando. Sem essa flag (o `--headless` já basta) uma única
+        # passada importa o projeto inteiro sem crash. Duas passadas por
+        # segurança, caso alguma cena dependa de outra importada na 1ª.
         run: |
-          for i in 1 2 3 4; do
-            godot --headless --path "$GITHUB_WORKSPACE" --editor --quit-after 2000 --display-driver headless --audio-driver Dummy
-          done
+          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless
+          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless
 
       - name: Export Web build to a temporary directory
         shell: bash
@@ -74,7 +74,7 @@ jobs:
           rm -rf "$export_dir"
           mkdir -p "$export_dir"
           godot --headless --path "$GITHUB_WORKSPACE" --export-release Web "$export_dir/index.html" \
-            --display-driver headless --audio-driver Dummy
+            --display-driver headless
           test -s "$export_dir/index.html"
           test -s "$export_dir/index.pck"
           find "$export_dir" -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
