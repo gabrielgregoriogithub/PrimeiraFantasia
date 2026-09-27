@@ -63,8 +63,12 @@ jobs:
         # passada importa o projeto inteiro sem crash. Duas passadas por
         # segurança, caso alguma cena dependa de outra importada na 1ª.
         run: |
-          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless
-          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless
+          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless; echo "exit=$?"
+          echo "arquivos em .godot/imported apos passada 1: $(find "$GITHUB_WORKSPACE/.godot/imported" -type f 2>/dev/null | wc -l)"
+          echo "tamanho de .godot: $(du -sh "$GITHUB_WORKSPACE/.godot" 2>/dev/null || echo 'nao existe')"
+          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless; echo "exit=$?"
+          echo "arquivos em .godot/imported apos passada 2: $(find "$GITHUB_WORKSPACE/.godot/imported" -type f 2>/dev/null | wc -l)"
+          echo "arquivos de origem sob assets/: $(find "$GITHUB_WORKSPACE/assets" -type f | wc -l)"
 
       - name: Export Web build to a temporary directory
         shell: bash
