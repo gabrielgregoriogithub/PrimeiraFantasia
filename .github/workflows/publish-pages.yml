@@ -63,14 +63,12 @@ jobs:
         # `--rendering-driver dummy` força um backend de renderização falso
         # que não depende de GPU nenhuma, então a importação roda de verdade.
         run: |
-          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless --rendering-driver dummy
+          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless --rendering-driver dummy --verbose > /tmp/import1.log 2>&1
           e1=$?
           n1=$(find "$GITHUB_WORKSPACE/.godot/imported" -type f 2>/dev/null | wc -l)
-          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless --rendering-driver dummy
-          e2=$?
-          n2=$(find "$GITHUB_WORKSPACE/.godot/imported" -type f 2>/dev/null | wc -l)
-          nsrc=$(find "$GITHUB_WORKSPACE/assets" -type f | wc -l)
-          echo "::notice::import pass1 exit=$e1 imported=$n1 | pass2 exit=$e2 imported=$n2 | arquivos fonte em assets/=$nsrc"
+          wc -l /tmp/import1.log
+          echo "::notice::pass1 exit=$e1 imported=$n1 total_linhas=$(wc -l < /tmp/import1.log) | primeiras: $(head -c 400 /tmp/import1.log | tr '\n' ' ') | ultimas: $(tail -c 500 /tmp/import1.log | tr '\n' ' ')"
+          echo "::notice::pass1 grep erro/warn: $(grep -iE 'error|warn|fail|cannot|denied' /tmp/import1.log | head -c 800 | tr '\n' ' ')"
 
       - name: Export Web build to a temporary directory
         shell: bash
