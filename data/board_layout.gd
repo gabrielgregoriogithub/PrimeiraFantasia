@@ -53,7 +53,33 @@ const FLOWER_LAYOUT := [
 ]
 
 ## Árvore/tenda: obstáculo total, ninguém atravessa nem "para" em cima.
-const BLOCKING_TERRAIN_TYPES := ["tree", "tent", "tower-wall", "tower-pillar", "tower-bookshelf", "tower-vase", "lua-mountain", "village-building"]
+## "porto-water"/"porto-pier"/"porto-blocked" são exclusivos do cenário PORTO
+## (ver ScenarioManager._porto_definition()) — "porto-water" existe À PARTE
+## de "water" de propósito: "water" comum é andável a custo dobrado
+## (GameState.water_step_cost), mas o PORTO pede água 100% intransitável;
+## criar um type novo em vez de reaproveitar "water" evita mudar esse
+## comportamento pros demais cenários (Campo/Vila/Vale de Lua/Torre).
+## "desfiladeiro-blocked" é o obstáculo avulso genérico do DESFILADEIRO
+## (pedra grande/monólito — ver ScenarioManager._desfiladeiro_definition()).
+## A ravina ("desfiladeiro-chasm") de propósito NÃO entra aqui: bloqueia só
+## unidades terrestres, sobrevoável — ver a checagem exclusiva desse type em
+## GameState.compute_reachable/_can_unit_anchor_at (mesma ideia de exceção
+## `flying` já usada ali, não uma entrada nova nesta lista universal, que
+## bloquearia voadores também).
+## "estrada-inverno-cliff" é a parede do platô elevado da ESTRADA INVERNO
+## (ver ScenarioManager._estrada_inverno_definition()) — type PRÓPRIO em vez
+## de reaproveitar "lua-mountain" (que já tem seu próprio render em atlas
+## específico do Vale de Lua, ver board_view.gd:_draw_lua_valley_board),
+## mesmo padrão estrutural (parede sólida + único vão de acesso) mas sem
+## qualquer risco de interferir no cenário existente.
+const BLOCKING_TERRAIN_TYPES := ["scenery-wall", "scenery-prop", "tree", "tent", "tower-wall", "tower-pillar", "tower-bookshelf", "tower-vase", "lua-mountain", "village-building", "porto-water", "porto-pier", "porto-blocked", "desfiladeiro-blocked", "estrada-inverno-cliff", "estrada-inverno-blocked"]
+
+## Props que uma unidade de 4 casas (footprint 2x2: Troll/Dragão/Salamandra/
+## Goo grande) ignora: atravessa e pode parar em cima. Morro ("lua-mountain",
+## "estrada-inverno-cliff"), parede/pilar, prédio, rocha e água do Porto NÃO
+## entram aqui — continuam barrando esse tipo de unidade (e Castelo/Montanha,
+## que são estruturas, ver GameState._can_unit_anchor_at).
+const LARGE_UNIT_PASSABLE_TERRAIN_TYPES := ["scenery-prop", "tree", "tent", "tower-bookshelf", "tower-vase"]
 
 const TREE_ART_VARIANTS := ["tree1.png", "tree2.png", "tree3.png", "tree4.png", "tree5.png"]
 const TENT_ART_VARIANTS := ["tent1.png", "tent2.png"]

@@ -78,6 +78,21 @@ const LUA_CATALOG_KEY := {
 	"rat": "spd_rat", "slime": "spd_slime", "snake": "spd_snake", "gnoll": "spd_gnoll", "goo": "spd_goo",
 }
 
+## Os 33 Guardians (ver data/guardian_monsters.gd) — lista literal espelhando
+## GuardianMonsters.keys(), mesmo padrão de DUNGEON_MONSTER_KEYS/
+## LUA_MONSTER_KEYS acima (const não pode chamar função em GDScript). Ao
+## contrário dos outros dois grupos, não precisa de um *_CATALOG_KEY próprio:
+## o spriteKey de cada Guardian já É a chave do SPRITE_MANIFEST (ver
+## data/sprite_manifest.gd), então _monster_portrait_texture resolve direto.
+const GUARDIAN_MONSTER_KEYS := [
+	"fordin", "stegofor", "brachifor", "kroki", "krokivip", "leviadile",
+	"devidin", "devidra", "deviraptor", "aerodin", "aerodeer", "aerostag",
+	"weastoat", "mooty", "camoon", "moopard", "wuppy", "earog", "deemog",
+	"dradder", "driper", "spreye", "buttereye", "duggot", "breem",
+	"marvillar", "marvantis", "palmpot", "bonsot", "erimat", "erichief",
+	"eggatch", "owlock",
+]
+
 ## Pedido do usuário: agrupar a seleção de monstros do PVP por categoria em
 ## vez de mostrar os ~15 de uma vez. Puramente organização de dados — cada
 ## chave aqui é a MESMA usada por Units.enemy_team_keys()/DUNGEON_MONSTER_KEYS/
@@ -90,15 +105,24 @@ const MONSTER_GROUPS := {
 	"criaturas": {"label": "Criaturas", "icon": "🐾", "monsters": ["rat", "snake", "gnoll", "goo", "slime"]},
 	"undead": {"label": "Mortos-Vivos", "icon": "💀", "monsters": ["vampire", "lich", "skeleton", "zombie", "ghost"]},
 	"fire": {"label": "Elementais do Fogo", "icon": "🔥", "monsters": ["living_fire", "lava_human", "salamander", "dragon", "flame_demon"]},
+	"guardians": {"label": "Guardiões", "icon": "🐲", "monsters": GUARDIAN_MONSTER_KEYS},
 }
-const MONSTER_GROUP_ORDER := ["goblinoides", "criaturas", "undead", "fire"]
+const MONSTER_GROUP_ORDER := ["goblinoides", "criaturas", "undead", "fire", "guardians"]
 
 ## Pedido do usuário: TOWER_FLOOR_4 (8º cenário do ScenarioManager) também
 ## escolhível no PVP — antes ficava de fora por ser sala de chefe única (1
 ## inimigo fixo, Salamandra) sem "enemy_spawns" próprio pra roster livre, mas
 ## ScenarioManager._tower_floor_4_definition() já ganhou os 5 spawns (ver
 ## comentário lá) igual 2º/3º Andar receberam antes. 8 cenários escolhíveis.
+## PORTO/DESFILADEIRO/ESTRADA_INVERNO (cenários independentes, fora de
+## PHASE_ORDER) — apply_pvp_scenario() já é genérico o bastante (monta o
+## terreno via apply_scenario() e só troca o elenco), nenhuma mudança extra
+## precisou ser feita neles. Pedido do usuário: os 3 cenários novos vão
+## PRIMEIRO na lista (mais visíveis, topo da grade de seleção) em vez de
+## no fim.
 const SCENARIO_IDS := [
+	ScenarioManager.CEMITERIO, ScenarioManager.TEMPLO,
+	ScenarioManager.PORTO, ScenarioManager.DESFILADEIRO, ScenarioManager.ESTRADA_INVERNO,
 	ScenarioManager.VILLAGE, ScenarioManager.FOREST, ScenarioManager.FIELD,
 	ScenarioManager.LUA_VALLEY, ScenarioManager.TOWER, ScenarioManager.TOWER_FLOOR_2,
 	ScenarioManager.TOWER_FLOOR_3, ScenarioManager.TOWER_FLOOR_4,
@@ -110,9 +134,10 @@ var _hero_keys: Array = []
 var _selected_monsters: Array = []
 var _selected_scenario: String = ""
 ## Grupo aberto no momento (vazio só na tela de grupos em si). Guardado só
-## pra "Voltar" reabrir o mesmo grupo — NUNCA usado pra filtrar
-## _selected_monsters, que continua livre entre categorias (pedido do
-## usuário: trocar de categoria nunca apaga a composição já escolhida).
+## pra "Voltar" reabrir o mesmo grupo. Pedido do usuário (revisado): times
+## inimigos não podem mais misturar categorias — ver _locked_monster_group(),
+## que bloqueia as outras capas na tela de grupos assim que o 1º monstro é
+## escolhido, até a seleção esvaziar de novo.
 var _current_group := ""
 
 ## Portraits pequenos dos monstros já escolhidos, mostrados na tela de
@@ -258,11 +283,30 @@ const MONSTER_GROUP_COVER_FILE := {
 ## TextureButton com STRETCH_KEEP_ASPECT_COVERED preenche a moldura sem
 ## esticar (corta o excedente mantendo a proporção, como capa de disco),
 ## dentro de um Control com clip_contents pra nunca vazar da moldura fixa.
+## Pedido do usuário: times inimigos do PVP não podem mais misturar
+## categorias — depois de escolher o 1º monstro, só a categoria dele
+## continua aberta; as outras ficam bloqueadas até a seleção esvaziar de
+## novo (desmarcar todos os monstros escolhidos).
+func _locked_monster_group() -> String:
+	for key in _selected_monsters:
+		return _group_of_monster(key)
+	return ""
+
+func _group_of_monster(key: String) -> String:
+	for group_key in MONSTER_GROUP_ORDER:
+		if (MONSTER_GROUPS[group_key]["monsters"] as Array).has(key):
+			return group_key
+	return ""
+
 func _add_group_card(group_key: String) -> void:
 	var group: Dictionary = MONSTER_GROUPS[group_key]
+	var locked_group := _locked_monster_group()
+	var is_locked_out: bool = locked_group != "" and locked_group != group_key
 	var card := VBoxContainer.new()
 	card.custom_minimum_size = GROUP_CARD_SIZE
+	card.modulate = Color(1, 1, 1, 0.4) if is_locked_out else Color.WHITE
 	_grid.add_child(card)
+	var lock_tooltip := "Time já composto só de %s — desmarque os monstros escolhidos pra trocar de categoria." % String(MONSTER_GROUPS[locked_group]["label"]) if is_locked_out else ""
 	var cover_path := "res://assets/enemies/capas/%s" % MONSTER_GROUP_COVER_FILE.get(group_key, "")
 	var picture_frame := Control.new()
 	picture_frame.custom_minimum_size = GROUP_PICTURE_SIZE
@@ -273,16 +317,20 @@ func _add_group_card(group_key: String) -> void:
 		texture_button.texture_normal = load(cover_path)
 		texture_button.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_COVERED
 		texture_button.set_anchors_preset(Control.PRESET_FULL_RECT)
-		texture_button.tooltip_text = "Abrir %s" % group["label"]
-		texture_button.pressed.connect(_open_monster_group.bind(group_key))
+		texture_button.tooltip_text = lock_tooltip if is_locked_out else "Abrir %s" % group["label"]
+		texture_button.disabled = is_locked_out
+		if not is_locked_out:
+			texture_button.pressed.connect(_open_monster_group.bind(group_key))
 		picture_frame.add_child(texture_button)
 	else:
 		var fallback_button := Button.new()
 		fallback_button.set_anchors_preset(Control.PRESET_FULL_RECT)
 		fallback_button.text = String(group["icon"])
 		fallback_button.add_theme_font_size_override("font_size", 96)
-		fallback_button.tooltip_text = "Abrir %s" % group["label"]
-		fallback_button.pressed.connect(_open_monster_group.bind(group_key))
+		fallback_button.tooltip_text = lock_tooltip if is_locked_out else "Abrir %s" % group["label"]
+		fallback_button.disabled = is_locked_out
+		if not is_locked_out:
+			fallback_button.pressed.connect(_open_monster_group.bind(group_key))
 		picture_frame.add_child(fallback_button)
 	var name_label := Label.new()
 	name_label.text = String(group["label"])
@@ -361,6 +409,13 @@ func _toggle_monster(key: String) -> void:
 	if _selected_monsters.has(key):
 		_selected_monsters.erase(key)
 	elif _selected_monsters.size() < MAX_MONSTERS:
+		# Pedido do usuário: time inimigo não pode misturar categorias — a
+		# regra de verdade vive aqui (não só nos botões desabilitados da tela
+		# de grupos, ver _add_group_card), então nem uma chamada direta
+		# consegue furar o bloqueio.
+		var locked_group := _locked_monster_group()
+		if locked_group != "" and _group_of_monster(key) != locked_group:
+			return
 		_selected_monsters.append(key)
 	_refresh_monsters_ui()
 
@@ -439,11 +494,18 @@ func _monster_template(key: String) -> Dictionary:
 	var templates := Units.build()
 	if templates.has(key):
 		return (templates[key] as Dictionary).duplicate(true)
-	var data: Dictionary = GameState.lua_monster_data(key) if key in LUA_MONSTER_KEYS else GameState.dungeon_monster_data(key)
+	var data: Dictionary
+	if key in GUARDIAN_MONSTER_KEYS:
+		data = GameState.guardian_monster_data(key)
+	elif key in LUA_MONSTER_KEYS:
+		data = GameState.lua_monster_data(key)
+	else:
+		data = GameState.dungeon_monster_data(key)
 	# Pedido do usuário: a ficha de seleção do PVP mostra 1 exemplar de cada
-	# vez — o índice "1" que dungeon_monster_data/lua_monster_data sempre
-	# numeram (útil quando várias cópias entram na MESMA batalha) não faz
-	# sentido aqui. Só a EXIBIÇÃO muda; _spawn_dungeon_enemy/_spawn_lua_monster
+	# vez — o índice "1" que dungeon_monster_data/lua_monster_data/
+	# guardian_monster_data sempre numeram (útil quando várias cópias entram
+	# na MESMA batalha) não faz sentido aqui. Só a EXIBIÇÃO muda;
+	# _spawn_dungeon_enemy/_spawn_lua_monster/_spawn_guardian_monster
 	# continuam numerando cada cópia normalmente na hora de montar a partida.
 	var display_name := String(data.get("name", ""))
 	if display_name.ends_with(" 1"):
@@ -589,11 +651,33 @@ func _show_monster_info(key: String) -> void:
 
 	_info_panel.visible = true
 
+## Pedido do usuário: descrição das armas/habilidades na tela de seleção do
+## PVP era só o nome (+ "X-Y de dano" quando tinha) — nada de custo, alcance,
+## acerto/crítico ou o que a habilidade REALMENTE faz. Agora monta uma linha
+## de estatísticas (só com os campos que o item de fato tem) e reaproveita o
+## tooltipNote já escrito à mão pra cada arma/magia (data/weapons.gd,
+## data/spells.gd) — a mesma explicação que já aparece no jogo em si, só que
+## agora também aqui, antes de escolher o monstro.
 func _item_summary(item: Dictionary) -> String:
 	var name_text := String(item.get("name", "?"))
+	var stats: Array[String] = []
+	if item.has("ctCost"): stats.append("CT %d" % int(item["ctCost"]))
+	if item.has("mpCost"): stats.append("MP %d" % int(item["mpCost"]))
+	if item.has("minRange") or item.has("maxRange"):
+		stats.append("alcance %d–%d" % [int(item.get("minRange", 1)), int(item.get("maxRange", 1))])
 	if item.has("damageMin") and item.has("damageMax"):
-		return "%s — %d-%d de dano" % [name_text, int(item["damageMin"]), int(item["damageMax"])]
-	return name_text
+		stats.append("dano %d–%d" % [int(item["damageMin"]), int(item["damageMax"])])
+	if item.has("healMin") and item.has("healMax"):
+		stats.append("cura %d–%d" % [int(item["healMin"]), int(item["healMax"])])
+	if item.has("hitChance"):
+		stats.append("%d%% de acerto" % roundi(float(item["hitChance"]) * 100.0))
+	if float(item.get("critChance", 0.0)) > 0.0:
+		stats.append("%d%% de crítico" % roundi(float(item["critChance"]) * 100.0))
+	var header := "%s (%s)" % [name_text, " · ".join(stats)] if not stats.is_empty() else name_text
+	var note := String(item.get("tooltipNote", "")).replace("<br>", "\n   ")
+	if note != "":
+		return "%s\n   %s" % [header, note]
+	return header
 
 func _add_info_heading(text: String) -> void:
 	var heading := Label.new()

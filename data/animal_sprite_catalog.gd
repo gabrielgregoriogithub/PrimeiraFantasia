@@ -168,14 +168,67 @@ static func build() -> Dictionary:
 		"bardo": _hero_folder_spec("bardo", {
 			"idle_down":[["walk_front_1.png","walk_front_2.png"],3.0],"idle_up":[["walk_back_1.png","walk_back_2.png"],3.0],"idle_left":[["walk_left_1.png","walk_left_2.png"],3.0],"idle_right":[["walk_right_1.png","walk_right_2.png"],3.0],
 			"walk_down":[["walk_front_1.png","walk_front_2.png"],7.0],"walk_up":[["walk_back_1.png","walk_back_2.png"],7.0],"walk_left":[["walk_left_1.png","walk_left_2.png"],8.0],"walk_right":[["walk_right_1.png","walk_right_2.png"],8.0],
-			"attack":[["attack_2.png"],10.0],"crossbow":[["attack_2.png"],10.0],"cast":[["attack_1.png"],8.0],"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]}),
+			"attack":[["attack_2.png"],10.0],"crossbow":[["attack_2.png"],10.0],"cast":[["attack_1.png"],8.0],"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]},
+			# Pedido do usuário: o cadáver do Bardo ficava "muito pequeno" na
+			# tela comparado a andar/atacar/parado. Causa: `_apply_animal_texture`
+			# escala esse PNG (arquivo próprio por ação, canvas quadrado igual em
+			# TODOS os frames do personagem) por DISPLAY_HEIGHT/altura DO CANVAS —
+			# não da altura do desenho visível dentro dele. Como death.png é um
+			# recorte deitado, o goblin/bardo/etc. ocupa bem menos altura de
+			# canvas que de pé, então o mesmo scale_factor (igual pra todo frame)
+			# renderiza o cadáver bem menor na tela. 1.17 iguala a ÁREA visual
+			# renderizada do cadáver à da pose de pé (walk_front_1) — mesmo
+			# cálculo aplicado a Goblin/Xamã/Orc/Troll/Arqueiro/Maga/Químico abaixo.
+			{"death.png": 1.17}),
+		# Pedido do usuário: Monge. A arte veio sem quadros laterais (só
+		# front_walk/back_walk), então esquerda/direita caem no par frontal e
+		# são espelhados automaticamente (_animal_directional_key +
+		# _animal_should_flip em UnitToken), mesmo caminho já usado por quem
+		# não tem arte de lado. Cada ação tem sua própria chave: "soco" para
+		# Soco/Rajada de Golpes, "chute" e "voadora" para o Chute do Dragão
+		# (ver "spriteAction" em weapons.gd/spells.gd e
+		# UnitToken.play_attack), "cast" para as habilidades sem alvo.
+		"monge": _hero_folder_spec("Monge", {
+			"idle_down":[["front_walk_1.png","front_walk_2.png"],3.0],"idle_up":[["back_walk_1.png","back_walk_2.png"],3.0],
+			"walk_down":[["front_walk_1.png","front_walk_2.png"],7.0],"walk_up":[["back_walk_1.png","back_walk_2.png"],7.0],
+			"attack":[["attack_soco_1.png","attack_soco_2.png","attack_soco_3.png"],10.0],
+			"soco":[["attack_soco_1.png","attack_soco_2.png","attack_soco_3.png"],10.0],
+			"chute":[["attack_chute_1.png","attack_chute_2.png","attack_chute_3.png"],10.0],
+			"voadora":[["voadora.png"],6.0],
+			"cast":[["attack_soco_1.png"],8.0],"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]},
+			# Mesmo ajuste de área do cadáver do Bardo/Arqueiro/Maga: death.png
+			# é um recorte deitado no mesmo canvas quadrado dos outros quadros,
+			# então sem isso o corpo renderiza bem menor que a pose de pé.
+			{"death.png": 1.13}),
+		# Pedido do usuário: Samurai (arte aprovada). idle_front.png é a pose
+		# parada de frente; para cima/esquerda/direita a pose parada reaproveita
+		# o 1º quadro de caminhada da direção (mesmo truque do Arqueiro/Maga).
+		# "attack" = saque (windup) + corte com o arco de energia; "bow" e
+		# "cast" mostram só o saque (o Samurai não tem arte de arco: o tiro
+		# usa a pose de saque da katana); "hit"/"death" têm arte própria.
+		"samurai": _hero_folder_spec("samurai", {
+			"idle_down":[["walk_south_1.png","walk_south_2.png"],3.0],"idle_up":[["walk_north_1.png","walk_north_2.png"],3.0],"idle_left":[["walk_west_1.png","walk_west_2.png"],3.0],"idle_right":[["walk_east_1.png","walk_east_2.png"],3.0],
+			"walk_down":[["walk_south_1.png","walk_south_2.png"],7.0],"walk_up":[["walk_north_1.png","walk_north_2.png"],7.0],"walk_left":[["walk_west_1.png","walk_west_2.png"],8.0],"walk_right":[["walk_east_1.png","walk_east_2.png"],8.0],
+			"attack":[["attack_sword_1_windup.png","attack_sword_2_slash_fx.png"],10.0],
+			"bow":[["attack_sword_1_windup.png"],8.0],"cast":[["attack_sword_1_windup.png"],8.0],
+			"hit":[["hit_1_impact.png"],8.0],"death":[["death_1.png"],6.0]},
+			# Mesmo ajuste de área do cadáver do Bardo/Arqueiro/Monge: o corpo
+			# deitado ocupa bem menos do canvas quadrado que a pose de pé.
+			{"death_1.png": 1.15}),
+		# Pedido do usuário: Vestruz (arte aprovada, sem retrato próprio: usa o
+		# 1º quadro de caminhada de frente). Idle reaproveita os quadros de
+		# caminhada. "attack" = coice (Coice Veloz/Disparada); "cuspe" e "cast"
+		# = 1º quadro de ataque (cabeça/pescoço armados).
+		"vestruz": _vestruz_spec(),
 		"arqueiro": _hero_folder_spec("arqueiro", {
 			# Pedido do usuário: apagou os PNGs antigos de idle prefixados
 			# (arqueiro_idle_*) — reaproveita os 2 quadros de walk parado no
 			# lugar, mesmo truque já usado em "bardo"/tower_skeleton/tower_salamander.
 			"idle_down":[["walk_front_1.png","walk_front_2.png"],3.0],"idle_up":[["walk_back_1.png","walk_back_2.png"],3.0],"idle_left":[["walk_left_1.png","walk_left_2.png"],3.0],"idle_right":[["walk_right_1.png","walk_right_2.png"],3.0],
 			"walk_down":[["walk_front_1.png","walk_front_2.png"],7.0],"walk_up":[["walk_back_1.png","walk_back_2.png"],7.0],"walk_left":[["walk_left_1.png","walk_left_2.png"],8.0],"walk_right":[["walk_right_1.png","walk_right_2.png"],8.0],
-			"attack":[["attack_1.png","attack_2.png"],10.0],"hit":[["hit.png"],8.0],"death":[["arqueiro_death.png"],6.0]}),
+			"attack":[["attack_1.png","attack_2.png"],10.0],"hit":[["hit.png"],8.0],"death":[["arqueiro_death.png"],6.0]},
+			# Mesmo ajuste de área do Bardo acima, aplicado ao cadáver do Arqueiro.
+			{"arqueiro_death.png": 1.28}),
 		# Pedido do usuário: arte nova da Maga (attack_1.png = conjuração cheia
 		# nova, walk_front/back/left/right_1/2.png em pares) substituindo o
 		# antigo conjunto prefixado "mago_*" pra ataque/caminhada — idle,
@@ -187,7 +240,9 @@ static func build() -> Dictionary:
 			# mesmo truque já usado em "bardo"/tower_skeleton/tower_salamander.
 			"idle_down":[["walk_front_1.png","walk_front_2.png"],3.0],"idle_up":[["walk_back_1.png","walk_back_2.png"],3.0],"idle_left":[["walk_left_1.png","walk_left_2.png"],3.0],"idle_right":[["walk_right_1.png","walk_right_2.png"],3.0],
 			"walk_down":[["walk_front_1.png","walk_front_2.png"],7.0],"walk_up":[["walk_back_1.png","walk_back_2.png"],7.0],"walk_left":[["walk_left_1.png","walk_left_2.png"],8.0],"walk_right":[["walk_right_1.png","walk_right_2.png"],8.0],
-			"attack":[["attack_1.png","attack_2.png"],10.0],"hit":[["mago_hit_1.png"],8.0],"death":[["mago_death_6.png"],6.0]}),
+			"attack":[["attack_1.png","attack_2.png"],10.0],"hit":[["mago_hit_1.png"],8.0],"death":[["mago_death_6.png"],6.0]},
+			# Mesmo ajuste de área do Bardo/Arqueiro acima, aplicado ao cadáver da Maga.
+			{"mago_death_6.png": 1.27}),
 		# Pedido do usuário: arte nova do Químico inteira (attack_1/2.png,
 		# hit.png, death.png, walk_front/back/left/right_1/2.png em pares)
 		# substituindo o antigo conjunto prefixado "quimico_*" pra ataque/dano/
@@ -196,7 +251,10 @@ static func build() -> Dictionary:
 		"quimico": _hero_folder_spec("quimico", {
 			"idle_down":[["quimico_idle_front_1.png"],2.0],"idle_up":[["quimico_idle_back_1.png"],2.0],"idle_left":[["quimico_idle_left_1.png"],2.0],"idle_right":[["quimico_idle_right_1.png"],2.0],
 			"walk_down":[["walk_front_1.png","walk_front_2.png"],7.0],"walk_up":[["walk_back_1.png","walk_back_2.png"],7.0],"walk_left":[["walk_left_1.png","walk_left_2.png"],8.0],"walk_right":[["walk_right_1.png","walk_right_2.png"],8.0],
-			"attack":[["attack_1.png","attack_2.png"],10.0],"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]}),
+			"attack":[["attack_1.png","attack_2.png"],10.0],"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]},
+			# Mesmo ajuste de área do Bardo/Arqueiro/Maga acima, aplicado ao
+			# cadáver do Químico.
+			{"death.png": 1.04}),
 		# Pedido do usuário: arte nova do Troll inteira (attack_1/2.png,
 		# hit.png, death.png, walk_front/back/left/right_1/2.png em pares) —
 		# apagou os PNGs antigos de idle prefixados (troll_idle_*) junto, então
@@ -205,7 +263,9 @@ static func build() -> Dictionary:
 		"troll": _enemy_folder_spec("troll", {
 			"idle_down":[["walk_front_1.png","walk_front_2.png"],3.0],"idle_up":[["walk_back_1.png","walk_back_2.png"],3.0],"idle_left":[["walk_left_1.png","walk_left_2.png"],3.0],"idle_right":[["walk_right_1.png","walk_right_2.png"],3.0],
 			"walk_down":[["walk_front_1.png","walk_front_2.png"],7.0],"walk_up":[["walk_back_1.png","walk_back_2.png"],7.0],"walk_left":[["walk_left_1.png","walk_left_2.png"],8.0],"walk_right":[["walk_right_1.png","walk_right_2.png"],8.0],
-			"attack":[["attack_1.png","attack_2.png"],10.0],"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]}),
+			"attack":[["attack_1.png","attack_2.png"],10.0],"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]},
+			# Mesmo ajuste de área (ver Goblin abaixo) aplicado ao cadáver do Troll.
+			{"death.png": 1.28}),
 		# Pedido do usuário: arte nova da Xamã inteira (attack_1/2.png, hit.png,
 		# death.png, portrait.png e walk_front/back/left/right_1/2.png em
 		# pares) — sem PNGs de idle (nem antigos nem novos), reaproveita os 2
@@ -214,10 +274,17 @@ static func build() -> Dictionary:
 			"idle_down":[["walk_front_1.png","walk_front_2.png"],3.0],"idle_up":[["walk_back_1.png","walk_back_2.png"],3.0],"idle_left":[["walk_left_1.png","walk_left_2.png"],3.0],"idle_right":[["walk_right_1.png","walk_right_2.png"],3.0],
 			"walk_down":[["walk_front_1.png","walk_front_2.png"],7.0],"walk_up":[["walk_back_1.png","walk_back_2.png"],7.0],"walk_left":[["walk_left_1.png","walk_left_2.png"],8.0],"walk_right":[["walk_right_1.png","walk_right_2.png"],8.0],
 			"attack":[["attack_1.png","attack_2.png"],10.0],"cast":[["attack_1.png","attack_2.png"],10.0],"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]},
-			# Pedido do usuário: o cadáver (death.png, recorte largo) ocupava 2
-			# quadrados horizontais — encolhe só esse quadro, mesmo truque do
-			# tower_zombie.
-			{"death.png": 0.48}),
+			# Pedido do usuário: a correção anterior (0.48, pedida quando o
+			# cadáver "ocupava 2 quadrados horizontais") superestimou o quanto
+			# encolher — `_apply_animal_texture` já escala este PNG (canvas
+			# quadrado igual em todo frame do personagem) por DISPLAY_HEIGHT/
+			# altura DO CANVAS, não da altura do desenho visível; como death.png
+			# é um recorte deitado, ocupa bem menos altura de canvas que a Xamã
+			# de pé, então 0.48 encolhia o cadáver bem abaixo do resto do elenco
+			# ("muito pequeno"). 1.26 iguala a ÁREA visual renderizada do cadáver
+			# à da pose de pé (walk_front_1) — mesmo cálculo do Goblin/Orc/Troll/
+			# Bardo/Arqueiro/Maga/Químico.
+			{"death.png": 1.26}),
 		# Pedido do usuário: arte nova do Orc inteira (attack_1/2.png, hit.png,
 		# death.png, portrait.png e walk_front/back/left/right_1/2.png em
 		# pares) — sem PNGs de idle, reaproveita os 2 quadros de walk parado,
@@ -225,7 +292,9 @@ static func build() -> Dictionary:
 		"orc": _enemy_folder_spec("orc", {
 			"idle_down":[["walk_front_1.png","walk_front_2.png"],3.0],"idle_up":[["walk_back_1.png","walk_back_2.png"],3.0],"idle_left":[["walk_left_1.png","walk_left_2.png"],3.0],"idle_right":[["walk_right_1.png","walk_right_2.png"],3.0],
 			"walk_down":[["walk_front_1.png","walk_front_2.png"],7.0],"walk_up":[["walk_back_1.png","walk_back_2.png"],7.0],"walk_left":[["walk_left_1.png","walk_left_2.png"],8.0],"walk_right":[["walk_right_1.png","walk_right_2.png"],8.0],
-			"attack":[["attack_1.png","attack_2.png"],10.0],"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]}),
+			"attack":[["attack_1.png","attack_2.png"],10.0],"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]},
+			# Mesmo ajuste de área (ver Goblin abaixo) aplicado ao cadáver do Orc.
+			{"death.png": 1.05}),
 		# Pedido do usuário: arte nova do Goblin inteira (attack_1/2.png,
 		# hit.png, death.png e walk_front/back_1/2.png + walk_left/right só com
 		# 1 quadro cada, sem par "_2" — diferente dos outros, então idle/walk
@@ -235,10 +304,35 @@ static func build() -> Dictionary:
 			"idle_down":[["walk_front_1.png","walk_front_2.png"],3.0],"idle_up":[["walk_back_1.png","walk_back_2.png"],3.0],"idle_left":[["walk_left_1.png"],2.0],"idle_right":[["walk_right_1.png"],2.0],
 			"walk_down":[["walk_front_1.png","walk_front_2.png"],7.0],"walk_up":[["walk_back_1.png","walk_back_2.png"],7.0],"walk_left":[["walk_left_1.png"],7.0],"walk_right":[["walk_right_1.png"],7.0],
 			"attack":[["attack_1.png","attack_2.png"],10.0],"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]},
-			# Pedido do usuário: o cadáver (death.png, recorte bem largo) ocupava 3
-			# quadrados horizontais — encolhe só esse quadro, mesmo truque do
-			# tower_zombie.
-			{"death.png": 0.46}),
+			# Pedido do usuário: a correção anterior (0.46, pedida quando o
+			# cadáver "ocupava 3 quadrados horizontais") superestimou o quanto
+			# encolher. Causa raiz: `_apply_animal_texture` escala este PNG
+			# (arquivo próprio por ação, canvas 512x512 igual em TODOS os frames
+			# do Goblin) por DISPLAY_HEIGHT/altura DO CANVAS — não da altura do
+			# desenho visível dentro dele. death.png é um recorte deitado
+			# (goblin caído, ocupando só ~187px de altura de um canvas de
+			# 512px, contra ~433px de pé), então o MESMO scale_factor usado pra
+			# todo frame já renderiza o cadáver bem menor na tela antes mesmo de
+			# qualquer frame_scale — 0.46 em cima disso encolhia ainda mais,
+			# virando "muito pequeno". 1.37 iguala a ÁREA visual renderizada do
+			# cadáver à da pose de pé (walk_front_1) em vez de só minimizar a
+			# largura.
+			{"death.png": 1.37}),
+		# Pedido do usuário: Guardian Buttereye (assets/enemies/guardians/
+		# buttereye) ganhou attack_1/2.png, hit.png, death.png e
+		# walk_front/back/left/right_1/2.png — sem PNGs de idle, reaproveita
+		# os 2 quadros de walk parado por direção, mesmo truque do
+		# Goblin/Orc/Xamã/Troll acima. Arquivo real do 1º quadro de walk_left
+		# tem o nome com "letf" trocado ("walk_letf_1.png"), não
+		# "walk_left_1.png" — preservado literalmente, mesma ideia do
+		# "wlak_right_2.png" já reaproveitado como está em "lava humana" (não
+		# corrigir o typo do arquivo, só referenciá-lo do jeito que existe).
+		# Retrato continua no arquivo antigo prefixado (buttereye_portrait.png,
+		# ver SpriteManifest.SPRITE_MANIFEST).
+		"buttereye": _enemy_folder_spec("guardians/buttereye", {
+			"idle_down":[["walk_front_1.png","walk_front_2.png"],3.0],"idle_up":[["walk_back_1.png","walk_back_2.png"],3.0],"idle_left":[["walk_letf_1.png","walk_left_2.png"],3.0],"idle_right":[["walk_right_1.png","walk_right_2.png"],3.0],
+			"walk_down":[["walk_front_1.png","walk_front_2.png"],7.0],"walk_up":[["walk_back_1.png","walk_back_2.png"],7.0],"walk_left":[["walk_letf_1.png","walk_left_2.png"],8.0],"walk_right":[["walk_right_1.png","walk_right_2.png"],8.0],
+			"attack":[["attack_1.png","attack_2.png"],10.0],"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]}),
 	}
 
 ## Igual a _hero_folder_spec, mas pra inimigos base fora da pasta
@@ -262,7 +356,17 @@ static func _enemy_folder_spec(folder: String, anims_files: Dictionary, frame_sc
 		frame_scale[root + file_name] = frame_scale_files[file_name]
 	return {"folder":folder,"bar_y":46.0,"impact_y":-38.0,"shadow":[27.0,9.0],"portrait":root+"portrait.png","anims":anims,"frame_scale":frame_scale}
 
-static func _hero_folder_spec(folder: String, anims_files: Dictionary) -> Dictionary:
+static func _vestruz_spec() -> Dictionary:
+	var spec := _hero_folder_spec("vestruz", {
+		"idle_down":[["walk_front_1.png","walk_front_2.png"],3.0],"idle_up":[["walk_back_1.png","walk_back_2.png"],3.0],"idle_left":[["walk_left_1.png","walk_left_2.png"],3.0],"idle_right":[["walk_right_1.png","walk_right_2.png"],3.0],
+		"walk_down":[["walk_front_1.png","walk_front_2.png"],7.0],"walk_up":[["walk_back_1.png","walk_back_2.png"],7.0],"walk_left":[["walk_left_1.png","walk_left_2.png"],8.0],"walk_right":[["walk_right_1.png","walk_right_2.png"],8.0],
+		"attack":[["attack_1.png","attack_2.png"],10.0],"cuspe":[["attack_1.png"],8.0],"cast":[["attack_1.png"],8.0],
+		"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]},
+		{"death.png": 1.2})
+	spec["portrait"] = "res://assets/heroes/vestruz/walk_front_1.png"
+	return spec
+
+static func _hero_folder_spec(folder: String, anims_files: Dictionary, frame_scale_files: Dictionary = {}) -> Dictionary:
 	var root := "res://assets/heroes/" + folder + "/"
 	var anims := {}
 	for action_key: String in anims_files:
@@ -270,7 +374,10 @@ static func _hero_folder_spec(folder: String, anims_files: Dictionary) -> Dictio
 		var paths: Array = []
 		for file_name: String in entry[0]: paths.append(root + file_name)
 		anims[action_key] = [paths, entry[1]]
-	return {"folder":folder,"bar_y":46.0,"impact_y":-38.0,"shadow":[27.0,9.0],"portrait":root+"portrait.png","anims":anims,"frame_scale":{}}
+	var frame_scale := {}
+	for file_name: String in frame_scale_files:
+		frame_scale[root + file_name] = frame_scale_files[file_name]
+	return {"folder":folder,"bar_y":46.0,"impact_y":-38.0,"shadow":[27.0,9.0],"portrait":root+"portrait.png","anims":anims,"frame_scale":frame_scale}
 
 ## Os cinco inimigos humanoides da Torre (Zumbi/Fantasma/Esqueleto/Lava
 ## Humana/Fogo Vivo) vieram como PNGs individuais já recortados por ação, não

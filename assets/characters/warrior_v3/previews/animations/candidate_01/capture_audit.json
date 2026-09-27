@@ -1,0 +1,30 @@
+{
+	"Attack_Chop": {
+		"duration": 1.53333330154419,
+		"tracks": 51
+	},
+	"Attack_Slash": {
+		"duration": 1.53333330154419,
+		"tracks": 51
+	},
+	"CombatIdle": {
+		"duration": 1.66666662693024,
+		"tracks": 49
+	},
+	"Death": {
+		"duration": 2.40000009536743,
+		"tracks": 50
+	},
+	"Hit": {
+		"duration": 0.333333343267441,
+		"tracks": 49
+	},
+	"Shield_Bash": {
+		"duration": 1.0,
+		"tracks": 50
+	},
+	"Walk": {
+		"duration": 1.33333337306976,
+		"tracks": 51
+	}
+}

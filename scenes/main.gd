@@ -13,10 +13,14 @@ const ART_DIRECTION := preload("res://data/art_direction_config.gd")
 ## targetMode das magias de área que exigem 2 cliques: o primeiro só acende
 ## a prévia (aoe_preview_tiles); o segundo, no MESMO tile, abre o popup de
 ## confirmação. Mesmo conjunto do `if` de onTileClick no JS original.
+## Duração do voo do Chute do Dragão até o alvo (pedido do usuário: ~2 s).
+const DRAGON_KICK_FLIGHT_SECONDS := 2.0
+
 const AOE_CONFIRM_MODES := [
 	"point-aoe", "line-aoe", "creeping-line", "flame-creeping-line", "cardinal-blast", "pierce-line",
 	"cone-poison", "cure-aoe", "heal-aoe", "regen-aoe", "mana-aoe", "trap", "freeze-aoe", "cone-windstorm", "cone-ice",
-	"inflict-wounds",
+	"inflict-wounds", "arrow-rain", "cone-fire", "self-aoe", "crescent-arc",
+	"dust-square", "heal-cross",
 ]
 
 ## Cor cosmética do flash de invocação (_resolve_spell, targetMode "summon")
@@ -34,11 +38,22 @@ const BATTLE_PRESENTATION_CONTROLLER := preload("res://scenes/battle_presentatio
 const CLASS_VISUAL_PROFILES := preload("res://data/class_visual_profiles.gd")
 
 var state: GameState
+## Janela de tela FIXA dedicada ao tabuleiro (ver _board_clip logo abaixo) e
+## base de toda a HUD que se ancora "ao lado"/"abaixo" dela (botões, fila de
+## turnos, painéis). De propósito NÃO multiplica por BoardView.TILE_SIZE:
+## desde que os tiles ficaram 50% maiores (pedido do usuário), o tabuleiro
+## lógico (13x13 * 96px = 1248px) não cabe mais inteiro na tela — zoom/
+## arrasto (ver board_view.gd:_update_camera/set_view_zoom/pan_view_by)
+## mostram esse mapa maior DENTRO desta mesma janela de tela, que continua
+## do tamanho de sempre. Mudar TILE_SIZE de novo no futuro não deve mexer
+## aqui — é uma constante de LAYOUT DE TELA, não do mundo do jogo.
+const BOARD_DISPLAY_PX := 832.0
 ## Envolve board_view com clip_contents=true pra cortar fisicamente qualquer
-## tile fora da janela fixa de 13x13 (832x832px) — necessário pra Horda, cujo
-## mapa real (26x22) é maior que essa janela e por isso vazaria tiles extras
-## se dependesse só do enquadramento da Camera2D (ver board_view.gd:_update_camera).
-## Campo/Torre já são exatamente 13x13, então o corte não altera nada pra eles.
+## tile fora da janela fixa de tela (BOARD_DISPLAY_PXxBOARD_DISPLAY_PX) —
+## necessário pra Horda, cujo mapa real (26x22) é maior que essa janela e
+## vazaria tiles extras se dependesse só do enquadramento da Camera2D (ver
+## board_view.gd:_update_camera), e agora também serve de área visível pro
+## zoom/arrasto do resto dos cenários (Campo/Torre/Vila).
 var _board_clip: Control
 var board_view: BoardView
 var unit_tokens: Dictionary = {}
@@ -86,6 +101,9 @@ var pending_item: Dictionary = {}
 var reachable_tiles: Array = []
 var attackable_units: Array = []
 var attack_range_tiles: Array = []
+## Quando o herói montado escolhe um golpe/habilidade da Vestruz, quem executa
+## é a Vestruz (pending_caster); o turno continua sendo do cavaleiro.
+var pending_caster: Variant = null
 var spell_tiles: Array = []
 
 ## Prévia de 2 cliques pra magia de área (equivalente a aoePreviewTarget/
@@ -126,10 +144,30 @@ var _confirm_cancel_button: Button
 var _facing_panel: Control
 var _facing_pending_unit: Dictionary = {}
 var _facing_confirm_button: Button
+var _facing_back_button: Button
 var _facing_title_label: Label
 var _facing_direction_buttons: Array[Button] = []
 var _facing_button_group := ButtonGroup.new()
+## Direção de antes de abrir o seletor (pedido do usuário: "Voltar" desiste
+## de encerrar o turno) — clicar numa seta já vira o personagem na hora, pra
+## pré-visualizar; sem isso, desistir deixaria a direção trocada mesmo sem
+## ter confirmado nada.
+var _facing_original_direction: Dictionary = {}
 var _waiting_for_projectile_turn_end := false
+var _area_sequence_active := false
+
+## --- Arrastar o tabuleiro com o botão esquerdo (pedido do usuário) --------
+## Decide clique-vs-arrasto SÓ na soltura do botão: pressionar apenas guarda
+## a posição inicial (não seleciona/move/ataca ainda); se o ponteiro andar
+## mais que DRAG_PAN_THRESHOLD_PX antes de soltar, vira arrasto (pan contínuo
+## via board_view.pan_view_by) e a soltura NÃO dispara clique nenhum. Sem
+## arrasto de verdade, a soltura chama exatamente a mesma lógica de clique
+## que existia antes (ver _handle_board_click_at).
+const DRAG_PAN_THRESHOLD_PX := 6.0
+var _drag_pointer_down := false
+var _drag_start_pos := Vector2.ZERO
+var _drag_last_pos := Vector2.ZERO
+var _drag_is_panning := false
 var _unit_info_panel: PanelContainer
 var _unit_info_title: Label
 var _unit_info_content: VBoxContainer
@@ -144,6 +182,11 @@ var _floor4_button: Button
 var _lua_button: Button
 var _village_button: Button
 var _forest_button: Button
+var _porto_button: Button
+var _desfiladeiro_button: Button
+var _estrada_inverno_button: Button
+var _templo_button: Button
+var _cemiterio_button: Button
 var _scenario_fade: ColorRect
 var _scenario_banner: Label
 const CAMPAIGN_SAVE_PATH := "user://campaign_progress.cfg"
@@ -154,6 +197,9 @@ var selected_party_keys: Array = []
 ## {"heroes": Array[String], "monsters": Array[String]}. null = partida
 ## normal (campanha). Ver _start_new_game()/GameState.apply_pvp_scenario.
 var _active_pvp_battle: Variant = null
+var _online_mode := false
+var _online_slot := 0
+var _online_lobby_layer: CanvasLayer
 ## true enquanto o quadro nativo de seleção de heróis (_show_party_selection)
 ## está sendo usado pela ETAPA 1 do Modo PVP, não pelo gate normal de
 ## campanha (_scenario_requires_party_selection) — faz _available_hero_keys()
@@ -182,6 +228,17 @@ var _party_selection_hidden_for_info := false
 func _ready() -> void:
 	scenario_manager = ScenarioManager.new()
 	add_child(scenario_manager)
+	# Redimensionar a janela muda quanto do mapa cabe na tela (ver
+	# board_view.gd:_display_area_size) — recalcula câmera e barras de
+	# rolagem pro novo tamanho, senão o alcance de arrasto ficaria
+	# desatualizado até a próxima interação.
+	get_viewport().size_changed.connect(func():
+		# set_view_zoom (API pública) já chama _update_camera() por dentro —
+		# reatribuir o mesmo valor só força o recálculo pro novo tamanho de
+		# janela, sem duplicar a lógica de câmera aqui.
+		if board_view != null: board_view.set_view_zoom(board_view.view_zoom)
+		_sync_board_scroll()
+	)
 	# Testes (GUT) não têm ninguém esperando a cutscene — pula direto pro
 	# boot normal, senão todo teste que instancia Main.tscn ficaria preso
 	# esperando ela terminar. DisplayServer.get_name() não serve de sinal
@@ -207,6 +264,12 @@ func _is_running_under_gut() -> bool:
 ## (Modo Historia, sem nenhuma mudanca no que ja existia) ou o assistente de
 ## configuracao do PVP (PvpSetup: herois -> monstros -> cenario).
 func _show_boot_flow() -> void:
+	# Pedido do usuário: a mesma música da Torre também toca na abertura do
+	# jogo (splash -> menu -> cutscene), não só depois de entrar num cenário
+	# de batalha — sem isso, esse trecho tocava a trilha ambiente sintetizada
+	# (ver AudioEngine._process), já que set_scenario_music só era chamado ao
+	# confirmar uma partida.
+	AudioEngine.set_scenario_music("boot")
 	var splash_layer := CanvasLayer.new()
 	splash_layer.layer = 100
 	add_child(splash_layer)
@@ -232,6 +295,65 @@ func _show_main_menu() -> void:
 		menu_layer.queue_free()
 		_show_pvp_setup()
 	)
+	menu.online_selected.connect(func(mode: String):
+		menu_layer.queue_free()
+		_show_online_lobby(mode)
+	)
+
+func _show_online_lobby(mode: String) -> void:
+	_online_lobby_layer = CanvasLayer.new()
+	_online_lobby_layer.layer = 100
+	add_child(_online_lobby_layer)
+	var lobby := OnlineLobby.new()
+	_online_lobby_layer.add_child(lobby)
+	lobby.closed.connect(func():
+		_online_lobby_layer.queue_free()
+		_online_lobby_layer = null
+		_show_main_menu()
+	)
+	lobby.match_ready.connect(func(payload: Dictionary):
+		_online_lobby_layer.queue_free()
+		_online_lobby_layer = null
+		_start_online_battle(payload)
+	)
+	lobby.begin(mode, OnlineConfig.room_from_url())
+	OnlineEndpoint.snapshot_received.connect(_on_online_snapshot)
+	OnlineEndpoint.action_rejected.connect(func(reason): _show_scenario_banner("ONLINE: %s" % reason))
+
+func _start_online_battle(payload: Dictionary) -> void:
+	_online_mode = true
+	_online_slot = int(payload.get("slot", OnlineEndpoint.slot()))
+	player_is_human = _online_slot == 1
+	enemy_is_human = _online_slot == 2
+	_active_pvp_battle = {"heroes": payload.get("heroes", Units.player_team_keys().slice(0, 5)), "monsters": payload.get("monsters", Units.enemy_team_keys().slice(0, 5))}
+	scenario_manager.set_active(String(payload.get("scenario", ScenarioManager.FIELD)))
+	if _hud_layer == null: _build_hud()
+	_start_new_game()
+	_on_online_snapshot(payload.get("snapshot", {}))
+
+func _on_online_snapshot(snapshot: Dictionary) -> void:
+	if not _online_mode or state == null or snapshot.is_empty(): return
+	var by_name := {}
+	for remote_unit in snapshot.get("units", []): by_name[String(remote_unit.get("name", ""))] = remote_unit
+	for local_unit in state.units:
+		var remote = by_name.get(String(local_unit.get("name", "")), null)
+		if remote != null:
+			local_unit.clear()
+			local_unit.merge(remote, true)
+	state.terrain_map = snapshot.get("terrain_map", {}).duplicate(true)
+	state.structures = snapshot.get("structures", []).duplicate(true)
+	state.elevation_map = snapshot.get("elevation_map", {}).duplicate(true)
+	state.traps = snapshot.get("traps", []).duplicate(true)
+	state.souls = snapshot.get("souls", []).duplicate(true)
+	state.turn_token = int(snapshot.get("turn_token", state.turn_token))
+	state.global_turn_count = int(snapshot.get("global_turn_count", state.global_turn_count))
+	state.battle_ended = bool(snapshot.get("battle_ended", state.battle_ended))
+	state.battle_won = bool(snapshot.get("battle_won", state.battle_won))
+	state.event_log = snapshot.get("event_log", []).duplicate(true)
+	state.last_action_vfx = snapshot.get("last_action_vfx", {}).duplicate(true)
+	var actor_name := String(snapshot.get("current_actor", ""))
+	state.current_actor = state.units.filter(func(u): return String(u.get("name", "")) == actor_name)[0] if state.units.any(func(u): return String(u.get("name", "")) == actor_name) else null
+	_sync_visuals()
 
 ## Etapa 1 do Modo PVP (pedido do usuário): heróis primeiro, no MESMO quadro
 ## "5 de 6" com retrato e "Ver personagem" já usado nos andares 3º/4º da
@@ -290,6 +412,11 @@ func _start_new_game() -> void:
 		return
 	_party_selection_confirmed_for_start = false
 	_ai_sequence_id += 1
+	_area_sequence_active = false
+	_waiting_for_projectile_turn_end = false
+	if effects_layer != null:
+		for effect in effects_layer.get_children():
+			if effect.get_script() == EffectsLayer.AREA_SEQUENCE: effect.queue_free()
 	_ai_sequence_running = false
 	enemy_visual_behavior.reset()
 	for token in unit_tokens.values():
@@ -322,7 +449,7 @@ func _start_new_game() -> void:
 	if _board_clip == null:
 		_board_clip = Control.new()
 		_board_clip.position = Vector2(24, 64)
-		_board_clip.size = Vector2(GameConstants.BOARD_SIZE, GameConstants.BOARD_SIZE) * BoardView.TILE_SIZE
+		_board_clip.size = Vector2.ONE * BOARD_DISPLAY_PX
 		_board_clip.clip_contents = true
 		_board_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(_board_clip)
@@ -332,6 +459,8 @@ func _start_new_game() -> void:
 	board_view.position = Vector2.ZERO
 	board_view.set_state(state)
 	board_view.set_scenario(scenario)
+	_update_board_zoom_label()
+	_sync_board_scroll()
 
 	for u in state.units:
 		var token := UnitToken.new()
@@ -417,35 +546,35 @@ func _build_hud() -> void:
 	_build_scenario_controls(layer)
 
 	_turn_label = Label.new()
-	_turn_label.position = Vector2(24, 54)
+	_turn_label.position = Vector2(410, 70)
 	_turn_label.add_theme_font_size_override("font_size", 16)
 	_turn_label.add_theme_color_override("font_color", Color.WHITE)
 	layer.add_child(_turn_label)
 
 	_status_label = Label.new()
-	_status_label.position = Vector2(24, 38)
-	_status_label.size = Vector2(GameConstants.BOARD_SIZE * BoardView.TILE_SIZE - 160, 20)
+	_status_label.position = Vector2(410, 50)
+	_status_label.size = Vector2(220, 20)
 	_status_label.add_theme_font_size_override("font_size", 14)
 	_status_label.add_theme_color_override("font_color", Color(0.6, 0.9, 1.0))
 	layer.add_child(_status_label)
 
 	_end_turn_button = Button.new()
 	_end_turn_button.text = "Encerrar Turno"
-	_end_turn_button.position = Vector2(GameConstants.BOARD_SIZE * BoardView.TILE_SIZE - 120, 16)
+	_end_turn_button.position = Vector2(BOARD_DISPLAY_PX - 120, 16)
 	_end_turn_button.size = Vector2(140, 32)
 	_end_turn_button.pressed.connect(_on_end_turn_pressed)
 	layer.add_child(_end_turn_button)
 
 	_music_mute_button = Button.new()
 	_music_mute_button.text = "🔊 Música"
-	_music_mute_button.position = Vector2(GameConstants.BOARD_SIZE * BoardView.TILE_SIZE - 120, 54)
+	_music_mute_button.position = Vector2(BOARD_DISPLAY_PX - 120, 54)
 	_music_mute_button.size = Vector2(140, 28)
 	_music_mute_button.pressed.connect(_on_music_mute_pressed)
 	layer.add_child(_music_mute_button)
 
 	_restart_button = Button.new()
 	_restart_button.text = "🔄 Reiniciar Partida"
-	_restart_button.position = Vector2(GameConstants.BOARD_SIZE * BoardView.TILE_SIZE - 270, 16)
+	_restart_button.position = Vector2(BOARD_DISPLAY_PX - 270, 16)
 	_restart_button.size = Vector2(140, 32)
 	_restart_button.pressed.connect(_start_new_game)
 	layer.add_child(_restart_button)
@@ -463,20 +592,20 @@ func _build_hud() -> void:
 	layer.add_child(_return_to_menu_button)
 
 	_player_control_button = Button.new()
-	_player_control_button.position = Vector2(GameConstants.BOARD_SIZE * BoardView.TILE_SIZE - 270, 54)
+	_player_control_button.position = Vector2(BOARD_DISPLAY_PX - 270, 54)
 	_player_control_button.size = Vector2(140, 28)
 	_player_control_button.pressed.connect(func(): _on_toggle_control_pressed(true))
 	layer.add_child(_player_control_button)
 
 	_enemy_control_button = Button.new()
-	_enemy_control_button.position = Vector2(GameConstants.BOARD_SIZE * BoardView.TILE_SIZE - 270, 92)
+	_enemy_control_button.position = Vector2(BOARD_DISPLAY_PX - 270, 92)
 	_enemy_control_button.size = Vector2(140, 28)
 	_enemy_control_button.pressed.connect(func(): _on_toggle_control_pressed(false))
 	layer.add_child(_enemy_control_button)
 	_refresh_control_buttons()
 
 	_action_menu_panel = PanelContainer.new()
-	_action_menu_panel.position = Vector2(GameConstants.BOARD_SIZE * BoardView.TILE_SIZE - 210, 130)
+	_action_menu_panel.position = Vector2(BOARD_DISPLAY_PX - 210, 130)
 	_action_menu_panel.custom_minimum_size = Vector2(210, 0)
 	_action_menu_panel.visible = false
 	var parchment := StyleBoxFlat.new()
@@ -498,10 +627,12 @@ func _build_hud() -> void:
 
 	_build_facing_panel(layer)
 	_build_turn_queue(layer)
+	_build_board_zoom_controls(layer)
+	_build_board_scrollbars(layer)
 
 	_log_label = Label.new()
-	_log_label.position = Vector2(24, GameConstants.BOARD_SIZE * BoardView.TILE_SIZE + 178)
-	_log_label.size = Vector2(GameConstants.BOARD_SIZE * BoardView.TILE_SIZE, 220)
+	_log_label.position = Vector2(24, BOARD_DISPLAY_PX + 178)
+	_log_label.size = Vector2(BOARD_DISPLAY_PX, 220)
 	_log_label.add_theme_font_size_override("font_size", 13)
 	_log_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
 	_log_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
@@ -537,6 +668,41 @@ func _build_scenario_controls(layer: CanvasLayer) -> void:
 	_forest_button.size = Vector2(90, 32)
 	_forest_button.pressed.connect(func(): _switch_scenario(ScenarioManager.FOREST))
 	layer.add_child(_forest_button)
+	_porto_button = Button.new()
+	_porto_button.text = "PORTO"
+	_porto_button.toggle_mode = true
+	_porto_button.position = Vector2(16, 50)
+	_porto_button.size = Vector2(78, 32)
+	_porto_button.pressed.connect(func(): _switch_scenario(ScenarioManager.PORTO))
+	layer.add_child(_porto_button)
+	_desfiladeiro_button = Button.new()
+	_desfiladeiro_button.text = "DESFILADEIRO"
+	_desfiladeiro_button.toggle_mode = true
+	_desfiladeiro_button.position = Vector2(98, 50)
+	_desfiladeiro_button.size = Vector2(126, 32)
+	_desfiladeiro_button.pressed.connect(func(): _switch_scenario(ScenarioManager.DESFILADEIRO))
+	layer.add_child(_desfiladeiro_button)
+	_estrada_inverno_button = Button.new()
+	_estrada_inverno_button.text = "ESTRADA INVERNO"
+	_estrada_inverno_button.toggle_mode = true
+	_estrada_inverno_button.position = Vector2(230, 50)
+	_estrada_inverno_button.size = Vector2(150, 32)
+	_estrada_inverno_button.pressed.connect(func(): _switch_scenario(ScenarioManager.ESTRADA_INVERNO))
+	layer.add_child(_estrada_inverno_button)
+	_templo_button = Button.new()
+	_templo_button.text = "TEMPLO"
+	_templo_button.toggle_mode = true
+	_templo_button.position = Vector2(16, 116)
+	_templo_button.size = Vector2(84, 28)
+	_templo_button.pressed.connect(func(): _switch_scenario(ScenarioManager.TEMPLO))
+	layer.add_child(_templo_button)
+	_cemiterio_button = Button.new()
+	_cemiterio_button.text = "CEMITÉRIO"
+	_cemiterio_button.toggle_mode = true
+	_cemiterio_button.position = Vector2(104, 116)
+	_cemiterio_button.size = Vector2(112, 28)
+	_cemiterio_button.pressed.connect(func(): _switch_scenario(ScenarioManager.CEMITERIO))
+	layer.add_child(_cemiterio_button)
 	_field_button = Button.new()
 	_field_button.text = "CAMPO"
 	_field_button.toggle_mode = true
@@ -554,34 +720,34 @@ func _build_scenario_controls(layer: CanvasLayer) -> void:
 	_tower_button = Button.new()
 	_tower_button.text = "TORRE"
 	_tower_button.toggle_mode = true
-	_tower_button.position = Vector2(16, 54)
+	_tower_button.position = Vector2(16, 84)
 	_tower_button.size = Vector2(70, 32)
 	_tower_button.pressed.connect(func(): _switch_scenario(ScenarioManager.TOWER))
 	layer.add_child(_tower_button)
 	_floor2_button = Button.new()
 	_floor2_button.text = "2º ANDAR"
 	_floor2_button.toggle_mode = true
-	_floor2_button.position = Vector2(88, 54)
+	_floor2_button.position = Vector2(88, 84)
 	_floor2_button.size = Vector2(100, 28)
 	_floor2_button.pressed.connect(func(): _switch_scenario(ScenarioManager.TOWER_FLOOR_2))
 	layer.add_child(_floor2_button)
 	_floor3_button = Button.new()
 	_floor3_button.text = "3º ANDAR"
 	_floor3_button.toggle_mode = true
-	_floor3_button.position = Vector2(190, 54)
+	_floor3_button.position = Vector2(190, 84)
 	_floor3_button.size = Vector2(100, 28)
 	_floor3_button.pressed.connect(func(): _switch_scenario(ScenarioManager.TOWER_FLOOR_3))
 	layer.add_child(_floor3_button)
 	_floor4_button = Button.new()
 	_floor4_button.text = "4º ANDAR"
 	_floor4_button.toggle_mode = true
-	_floor4_button.position = Vector2(292, 54)
+	_floor4_button.position = Vector2(292, 84)
 	_floor4_button.size = Vector2(100, 28)
 	_floor4_button.pressed.connect(func(): _switch_scenario(ScenarioManager.TOWER_FLOOR_4))
 	layer.add_child(_floor4_button)
 	_scenario_banner = Label.new()
-	_scenario_banner.position = Vector2(250, 82)
-	_scenario_banner.size = Vector2(420, 42)
+	_scenario_banner.position = Vector2(410, 112)
+	_scenario_banner.size = Vector2(220, 42)
 	_scenario_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_scenario_banner.add_theme_font_size_override("font_size", 24)
 	_scenario_banner.add_theme_color_override("font_color", Color("fff0c2"))
@@ -618,6 +784,11 @@ func _switch_scenario(id: String) -> void:
 	_lua_button.disabled = true
 	_village_button.disabled = true
 	_forest_button.disabled = true
+	_porto_button.disabled = true
+	_desfiladeiro_button.disabled = true
+	_estrada_inverno_button.disabled = true
+	_templo_button.disabled = true
+	_cemiterio_button.disabled = true
 	var fade := create_tween()
 	fade.tween_property(_scenario_fade, "modulate:a", 1.0, 0.20)
 	fade.tween_callback(func():
@@ -649,6 +820,11 @@ func _switch_scenario(id: String) -> void:
 		_lua_button.disabled = false
 		_village_button.disabled = false
 		_forest_button.disabled = false
+		_porto_button.disabled = false
+		_desfiladeiro_button.disabled = false
+		_estrada_inverno_button.disabled = false
+		_templo_button.disabled = false
+		_cemiterio_button.disabled = false
 	)
 
 func _refresh_scenario_buttons() -> void:
@@ -661,6 +837,11 @@ func _refresh_scenario_buttons() -> void:
 	_lua_button.button_pressed = scenario_manager.active_id == ScenarioManager.LUA_VALLEY
 	_village_button.button_pressed = scenario_manager.active_id == ScenarioManager.VILLAGE
 	_forest_button.button_pressed = scenario_manager.active_id == ScenarioManager.FOREST
+	_porto_button.button_pressed = scenario_manager.active_id == ScenarioManager.PORTO
+	_desfiladeiro_button.button_pressed = scenario_manager.active_id == ScenarioManager.DESFILADEIRO
+	_estrada_inverno_button.button_pressed = scenario_manager.active_id == ScenarioManager.ESTRADA_INVERNO
+	_templo_button.button_pressed = scenario_manager.active_id == ScenarioManager.TEMPLO
+	_cemiterio_button.button_pressed = scenario_manager.active_id == ScenarioManager.CEMITERIO
 	_field_button.modulate = Color("ffd86b") if _field_button.button_pressed else Color.WHITE
 	_tower_button.modulate = Color("ffd86b") if _tower_button.button_pressed else Color.WHITE
 	_floor2_button.modulate = Color("ffd86b") if _floor2_button.button_pressed else Color.WHITE
@@ -669,6 +850,11 @@ func _refresh_scenario_buttons() -> void:
 	_lua_button.modulate = Color("ffd86b") if _lua_button.button_pressed else Color.WHITE
 	_village_button.modulate = Color("ffd86b") if _village_button.button_pressed else Color.WHITE
 	_forest_button.modulate = Color("ffd86b") if _forest_button.button_pressed else Color.WHITE
+	_porto_button.modulate = Color("ffd86b") if _porto_button.button_pressed else Color.WHITE
+	_desfiladeiro_button.modulate = Color("ffd86b") if _desfiladeiro_button.button_pressed else Color.WHITE
+	_estrada_inverno_button.modulate = Color("ffd86b") if _estrada_inverno_button.button_pressed else Color.WHITE
+	_templo_button.modulate = Color("ffd86b") if _templo_button.button_pressed else Color.WHITE
+	_cemiterio_button.modulate = Color("ffd86b") if _cemiterio_button.button_pressed else Color.WHITE
 
 func _show_scenario_banner(text: String) -> void:
 	if _scenario_banner == null: return
@@ -678,6 +864,18 @@ func _show_scenario_banner(text: String) -> void:
 	banner.tween_property(_scenario_banner, "modulate:a", 1.0, 0.20)
 	banner.tween_interval(1.15)
 	banner.tween_property(_scenario_banner, "modulate:a", 0.0, 0.32)
+	# Bug relatado pelo usuário: a frase de vitória ("🏆 VITÓRIA! Avançando de
+	# fase...") às vezes ficava presa na tela até o cenário seguinte, quando
+	# a troca de cenário interrompia a tween acima antes dela terminar de
+	# sumir. Timer isolado, independente dessa tween, garante um teto rígido
+	# de 3s pra qualquer frase — só limpa se ainda for a MESMA frase (não
+	# apaga uma frase mais nova mostrada nesse meio-tempo).
+	var shown_text := text
+	get_tree().create_timer(3.0).timeout.connect(func():
+		if is_instance_valid(_scenario_banner) and _scenario_banner.text == shown_text:
+			_scenario_banner.modulate.a = 0.0
+			_scenario_banner.text = ""
+	)
 
 func _build_tower_atmosphere(definition: Dictionary) -> void:
 	# O grading da Torre agora pertence ao perfil do bioma no BoardView; um
@@ -712,10 +910,14 @@ func _build_tower_atmosphere(definition: Dictionary) -> void:
 		board_view.add_child(torch)
 
 func _build_turn_queue(layer: CanvasLayer) -> void:
-	var board_px := GameConstants.BOARD_SIZE * BoardView.TILE_SIZE
+	var board_px := BOARD_DISPLAY_PX
 	_turn_queue_panel = PanelContainer.new()
 	_turn_queue_panel.position = Vector2(24, 64 + board_px + 8)
-	_turn_queue_panel.custom_minimum_size = Vector2(board_px, 96)
+	# Altura maior que antes (96->128): agora cada cartão também mostra HP/MP
+	# (ver _refresh_turn_queue) — as barras de HP/MP saíram do tabuleiro e só
+	# aparecem aqui, a pedido do usuário, pra não competir com o sprite do
+	# personagem (que voltou ao tamanho original, maior que o tile).
+	_turn_queue_panel.custom_minimum_size = Vector2(board_px, 128)
 	var panel_style := StyleBoxFlat.new()
 	panel_style.bg_color = Color(0.055, 0.06, 0.10, 0.96)
 	panel_style.border_color = Color(0.30, 0.34, 0.48, 0.95)
@@ -742,6 +944,137 @@ func _build_turn_queue(layer: CanvasLayer) -> void:
 	_turn_queue_hbox.add_theme_constant_override("separation", 6)
 	column.add_child(_turn_queue_hbox)
 
+## Botões fixos de zoom do tabuleiro (+/−/100%, pedido do usuário) — ficam no
+## canto inferior direito da janela do tabuleiro (_board_clip), FORA da
+## camada que o zoom escala (board_view), então não crescem/encolhem junto
+## com o mapa. Cada botão só chama board_view.change_view_zoom/reset_view
+## (fonte única de verdade, ver board_view.gd) e devolve o foco pro board
+## logo depois, pra um clique aqui nunca ser interpretado como clique no
+## tabuleiro por baixo.
+var _board_zoom_label: Label
+
+func _build_board_zoom_controls(layer: CanvasLayer) -> void:
+	var panel := PanelContainer.new()
+	panel.position = Vector2(24 + BOARD_DISPLAY_PX - 130, 64 + BOARD_DISPLAY_PX - 44)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.09, 0.14, 0.88)
+	style.border_color = Color(0.42, 0.46, 0.62, 0.9)
+	style.set_border_width_all(1)
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	style.content_margin_left = 6
+	style.content_margin_right = 6
+	style.content_margin_top = 4
+	style.content_margin_bottom = 4
+	panel.add_theme_stylebox_override("panel", style)
+	layer.add_child(panel)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	panel.add_child(row)
+
+	var zoom_out := Button.new()
+	zoom_out.text = "−"
+	zoom_out.custom_minimum_size = Vector2(28, 28)
+	zoom_out.pressed.connect(func():
+		board_view.change_view_zoom(-1)
+		_update_board_zoom_label()
+		_sync_board_scroll()
+	)
+	row.add_child(zoom_out)
+
+	_board_zoom_label = Label.new()
+	_board_zoom_label.text = "60%"
+	_board_zoom_label.custom_minimum_size = Vector2(44, 28)
+	_board_zoom_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_board_zoom_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_board_zoom_label.add_theme_color_override("font_color", Color("d8dcf2"))
+	row.add_child(_board_zoom_label)
+
+	var zoom_in := Button.new()
+	zoom_in.text = "+"
+	zoom_in.custom_minimum_size = Vector2(28, 28)
+	zoom_in.pressed.connect(func():
+		board_view.change_view_zoom(1)
+		_update_board_zoom_label()
+		_sync_board_scroll()
+	)
+	row.add_child(zoom_in)
+
+	var zoom_reset := Button.new()
+	zoom_reset.text = "100%"
+	zoom_reset.custom_minimum_size = Vector2(0, 28)
+	zoom_reset.pressed.connect(func():
+		board_view.reset_view()
+		_update_board_zoom_label()
+		_sync_board_scroll()
+	)
+	row.add_child(zoom_reset)
+
+func _update_board_zoom_label() -> void:
+	if _board_zoom_label != null and board_view != null:
+		_board_zoom_label.text = "%d%%" % roundi(board_view.view_zoom * 100.0)
+
+## Barras de rolagem horizontal/vertical — mesma fonte única de verdade que
+## o arrasto (board_view.view_pan), só outro jeito de escrever nela (ver
+## _on_board_hscroll/_on_board_vscroll). Ficam FORA de _board_clip (não são
+## escaladas pelo zoom do mapa, ver pedido do usuário "não escale os
+## botões"), na borda direita/inferior da janela do tabuleiro.
+var _board_hscroll: HScrollBar
+var _board_vscroll: VScrollBar
+var _syncing_board_scroll := false
+
+func _build_board_scrollbars(layer: CanvasLayer) -> void:
+	_board_hscroll = HScrollBar.new()
+	_board_hscroll.position = Vector2(24, 64 + BOARD_DISPLAY_PX + 2)
+	_board_hscroll.size = Vector2(BOARD_DISPLAY_PX, 14)
+	_board_hscroll.value_changed.connect(_on_board_hscroll_changed)
+	layer.add_child(_board_hscroll)
+
+	_board_vscroll = VScrollBar.new()
+	_board_vscroll.position = Vector2(24 + BOARD_DISPLAY_PX + 2, 64)
+	_board_vscroll.size = Vector2(14, BOARD_DISPLAY_PX)
+	_board_vscroll.value_changed.connect(_on_board_vscroll_changed)
+	layer.add_child(_board_vscroll)
+	_sync_board_scroll()
+
+func _on_board_hscroll_changed(value: float) -> void:
+	if _syncing_board_scroll or board_view == null: return
+	board_view.set_view_pan(Vector2(value, board_view.view_pan.y))
+	_sync_board_scroll()
+
+func _on_board_vscroll_changed(value: float) -> void:
+	if _syncing_board_scroll or board_view == null: return
+	board_view.set_view_pan(Vector2(board_view.view_pan.x, value))
+	_sync_board_scroll()
+
+## Chamada depois de QUALQUER mudança de zoom/arrasto/reset (botões, drag,
+## reset_view, troca de cenário) — recalcula alcance/página das duas barras
+## a partir de board_view.pan_range()/visible_world_size() e reflete
+## view_pan atual nelas, sem disparar value_changed de volta (guard
+## _syncing_board_scroll evita o ciclo arrasto->scrollbar->arrasto).
+func _sync_board_scroll() -> void:
+	if _board_hscroll == null or _board_vscroll == null or board_view == null: return
+	_syncing_board_scroll = true
+	var range: Vector2 = board_view.pan_range()
+	var page: Vector2 = board_view.visible_world_size()
+	var pan: Vector2 = board_view.view_pan
+	# Range.value máximo alcançável por arrasto do thumb é (max_value - page),
+	# não max_value — soma `page` de volta pra que o valor de verdade
+	# alcançável bata com +range.x/y (ver docs de Range/ScrollBar).
+	_board_hscroll.visible = range.x > 0.0
+	_board_hscroll.min_value = -range.x
+	_board_hscroll.page = page.x
+	_board_hscroll.max_value = range.x + page.x
+	_board_hscroll.value = clampf(pan.x, -range.x, range.x)
+	_board_vscroll.visible = range.y > 0.0
+	_board_vscroll.min_value = -range.y
+	_board_vscroll.page = page.y
+	_board_vscroll.max_value = range.y + page.y
+	_board_vscroll.value = clampf(pan.y, -range.y, range.y)
+	_syncing_board_scroll = false
+
 func _predicted_turn_queue() -> Array:
 	var result: Array = []
 	if state == null:
@@ -750,7 +1083,7 @@ func _predicted_turn_queue() -> Array:
 		result.append(state.current_actor)
 	var candidates: Array = []
 	for unit in state.alive_units():
-		if unit.get("caged", false):
+		if unit.get("caged", false) or unit.get("riderName", "") != "":
 			continue
 		if state.current_actor != null and unit == state.current_actor:
 			continue
@@ -796,12 +1129,15 @@ func _refresh_turn_queue() -> void:
 	for index in range(mini(queue.size(), 11)):
 		var unit: Dictionary = queue[index]
 		var frame := PanelContainer.new()
-		frame.custom_minimum_size = Vector2(74, 68) if index == 0 and unit == state.current_actor else Vector2(68, 65)
+		# +14px de altura (era 68/65) pra caber a fileira de ícones de status
+		# abaixo do nome (ver bloco depois de name_label — HP/MP saíram daqui
+		# a pedido do usuário, status ficou no lugar deles).
+		frame.custom_minimum_size = Vector2(74, 82) if index == 0 and unit == state.current_actor else Vector2(68, 79)
 		var style := StyleBoxFlat.new()
 		var is_current: bool = index == 0 and unit == state.current_actor
 		var is_corpse: bool = int(unit.get("hp", 0)) <= 0 and unit.has("turnsSinceDeath")
 		style.bg_color = Color(0.18, 0.15, 0.08, 1.0) if is_current else (Color(0.14, 0.035, 0.045, 0.98) if is_corpse else Color(0.08, 0.09, 0.14, 0.95))
-		style.border_color = Color("ffd45c") if is_current else (Color("dc2638") if is_corpse else (Color("5fa8ff") if unit["team"] == "player" else Color("ef6666")))
+		style.border_color = Color("ffd45c") if is_current else (Color("dc2638") if is_corpse else (Color("5fa8ff") if unit["team"] == "player" else (Color("b57bff") if unit["team"] == "neutral" else Color("ef6666"))))
 		style.set_border_width_all(3 if is_current else 1)
 		style.corner_radius_top_left = 5
 		style.corner_radius_top_right = 5
@@ -874,14 +1210,101 @@ func _refresh_turn_queue() -> void:
 			portrait.add_child(death_count)
 		else:
 			portrait.tooltip_text = "%s — CT %d, Agilidade %d" % [unit["name"], unit["ct"], unit["speed"]]
+			var queue_mount = state.mount_of(unit)
+			if queue_mount != null:
+				portrait.tooltip_text += "\nMontado na %s — HP %d/%d, MP %d/%d (a dupla age neste turno; os golpes recebidos ferem a montaria)" % [queue_mount["name"], queue_mount["hp"], queue_mount["maxHp"], queue_mount["mp"], queue_mount["maxMp"]]
 		slot.add_child(portrait)
 		var name_label := Label.new()
-		name_label.text = (("☠ " if is_corpse else "▶ ") if is_current or is_corpse else "%d. " % (index + 1)) + String(unit["name"])
+		name_label.text = (("☠ " if is_corpse else "▶ ") if is_current or is_corpse else "%d. " % (index + 1)) + String(unit["name"]) + (" 🐦" if unit.get("mountedOn", "") != "" else "")
 		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		name_label.add_theme_font_size_override("font_size", 9)
 		name_label.add_theme_color_override("font_color", Color("ff7d87") if is_corpse else (Color("ffe895") if is_current else Color.WHITE))
 		slot.add_child(name_label)
+
+		# HP/MP moraram aqui antes (ver histórico) — pedido do usuário: tiradas
+		# também da fila de turnos (não sobra nenhum lugar com barra de HP/MP
+		# fora dos cartões de combate). No lugar delas, um ícone por status
+		# ativo (queimando/envenenado/congelado/etc.), com nome + turnos
+		# restantes no tooltip — mesmo espírito do badge que já existia no
+		# tile do tabuleiro.
+		var active_statuses: Array = unit.get("statusEffects", [])
+		if not is_corpse and active_statuses.size() > 0:
+			var status_row := HBoxContainer.new()
+			status_row.alignment = BoxContainer.ALIGNMENT_CENTER
+			status_row.add_theme_constant_override("separation", 1)
+			slot.add_child(status_row)
+			for effect in active_statuses:
+				var effect_type := String(effect.get("type", ""))
+				var icon_label := Label.new()
+				icon_label.text = _turn_queue_status_icon(effect_type)
+				icon_label.add_theme_font_size_override("font_size", 12)
+				icon_label.mouse_filter = Control.MOUSE_FILTER_STOP
+				var turns_left = effect.get("turnsLeft")
+				var turns_text := " — %d turno(s)" % int(turns_left) if turns_left != null else ""
+				icon_label.tooltip_text = _turn_queue_status_label(effect_type) + turns_text
+				status_row.add_child(icon_label)
+
+## Ícone compacto por tipo de status — mesmo conjunto usado em add_status_effect
+## (GameState), coberto aqui só pra exibição na fila de turnos. Tipo
+## desconhecido cai no ❔ genérico em vez de travar/ficar em branco.
+static func _turn_queue_status_icon(effect_type: String) -> String:
+	match effect_type:
+		"poison": return "☠️"
+		"root": return "🌿"
+		"invisible": return "👻"
+		"blinded": return "🙈"
+		# "paralyzed" também é o congelamento (sem tipo "frozen" separado no
+		# projeto) — o ícone precisa comunicar isso sozinho.
+		"paralyzed": return "❄️"
+		"fury": return "😡"
+		"regenBoost": return "🌱"
+		"swiftFeet": return "🦶"
+		"bleed": return "🩸"
+		"burned": return "🔥"
+		"regen": return "💚"
+		"dazed": return "😵‍💫"
+		"evasive": return "🍃"
+		"weakened": return "⛓️"
+		"slowed": return "🐌"
+		"guarding": return "🛡️"
+		"focus": return "🧘"
+		"heronStance": return "🦢"
+		"guardBroken": return "💥"
+		"dustBlind": return "🌫️"
+		"batForm": return "🦇"
+		"bardInspiration": return "🎵"
+		"reincarnation": return "♻️"
+		_: return "❔"
+
+## Nome legível de cada status pro tooltip do ícone acima (mesmo texto que
+## apareceria num badge de status, só que sem depender de um por unidade).
+static func _turn_queue_status_label(effect_type: String) -> String:
+	match effect_type:
+		"poison": return "Veneno"
+		"root": return "Raízes"
+		"invisible": return "Invisibilidade"
+		"blinded": return "Ofuscado"
+		"paralyzed": return "Paralisado (Congelado)"
+		"fury": return "Fúria"
+		"regenBoost": return "Regeneração aumentada"
+		"swiftFeet": return "Pés Ágeis"
+		"bleed": return "Sangramento"
+		"burned": return "Queimando"
+		"regen": return "Regenerando"
+		"dazed": return "Atordoado(a)"
+		"evasive": return "Evasiva"
+		"weakened": return "Debilitado"
+		"slowed": return "Lento"
+		"guarding": return "Defendendo"
+		"focus": return "Foco (bloqueia ataque físico, metade do dano mágico)"
+		"heronStance": return "Postura da Garça (+25% de esquiva e contra-ataque)"
+		"guardBroken": return "Guarda Quebrada (+1 de dano recebido por ataque)"
+		"dustBlind": return "Poeira nos olhos (-20% de acerto nos próprios ataques)"
+		"batForm": return "Forma de Morcego"
+		"bardInspiration": return "Inspiração do Bardo"
+		"reincarnation": return "Selo de Reencarnação"
+		_: return effect_type
 
 ## Os retratos da fila também servem como atalho de inspeção. Diferente do
 ## clique no tabuleiro, aqui o ator atual pode ser inspecionado: o clique é
@@ -897,6 +1320,12 @@ func _on_turn_queue_portrait_gui_input(event: InputEvent, unit: Dictionary) -> v
 		return
 	if _confirm_panel.visible or _facing_panel.visible:
 		return
+	# Pedido do usuário: clicar no retrato centraliza a câmera no personagem
+	# quando o zoom estiver acima do mínimo (60%) — no mínimo o tabuleiro
+	# inteiro já cabe na tela, então centralizar não faria diferença.
+	if board_view != null and board_view.view_zoom > 0.6:
+		board_view.center_on_tile(int(unit.get("x", 0)), int(unit.get("y", 0)))
+		_sync_board_scroll()
 	_open_unit_info(unit)
 	get_viewport().set_input_as_handled()
 
@@ -904,7 +1333,7 @@ func _on_turn_queue_portrait_gui_input(event: InputEvent, unit: Dictionary) -> v
 ## tocar em qualquer unidade que não seja o ator atual.
 func _build_unit_info_panel(layer: CanvasLayer) -> void:
 	_unit_info_panel = PanelContainer.new()
-	var board_px := GameConstants.BOARD_SIZE * BoardView.TILE_SIZE
+	var board_px := BOARD_DISPLAY_PX
 	_unit_info_panel.position = Vector2(24 + board_px * 0.5 - 285, 72)
 	_unit_info_panel.custom_minimum_size = Vector2(570, 690)
 	_unit_info_panel.visible = false
@@ -1149,7 +1578,7 @@ func _add_item_cards(items: Array) -> void:
 
 func _status_card_text(effect: Dictionary) -> String:
 	var type: String = effect.get("type", "")
-	var labels := {"poison":"☠ Envenenado", "bleed":"◆ Sangrando", "root":"⌘ Enraizado", "burned":"🔥 Queimando", "regen":"✚ Regeneração", "regenBoost":"✚ Regeneração ampliada", "weakened":"↓ Enfraquecido", "paralyzed":"⚡ Paralisado", "dazed":"✹ Atordoado", "blinded":"◉ Cego", "slowed":"↓ Lentidão", "guarding":"🛡 Protegido", "fury":"⚔ Fúria", "invisible":"◌ Invisível", "evasive":"↝ Evasivo", "swiftFeet":"» Pés Ágeis", "bardInspiration":"♫ Inspirado pelo Bardo", "batForm":"🦇 Forma de Morcego"}
+	var labels := {"poison":"☠ Envenenado", "bleed":"◆ Sangrando", "root":"⌘ Enraizado", "burned":"🔥 Queimando", "regen":"✚ Regeneração", "regenBoost":"✚ Regeneração ampliada", "weakened":"↓ Enfraquecido", "paralyzed":"⚡ Paralisado", "dazed":"✹ Atordoado", "blinded":"◉ Cego", "slowed":"↓ Lentidão", "guarding":"🛡 Protegido", "focus":"🧘 Foco — bloqueia ataque físico e reduz magia pela metade", "heronStance":"🦢 Postura da Garça — +25% de esquiva e contra-ataque", "guardBroken":"💥 Guarda Quebrada — +1 de dano por ataque recebido", "dustBlind":"🌫 Poeira nos olhos — -20% de acerto", "fury":"⚔ Fúria", "invisible":"◌ Invisível", "evasive":"↝ Evasivo", "swiftFeet":"» Pés Ágeis", "bardInspiration":"♫ Inspirado pelo Bardo", "batForm":"🦇 Forma de Morcego", "reincarnation":"♻️ Selo de Reencarnação"}
 	var result: String = labels.get(type, type.capitalize())
 	if effect.has("turnsLeft"): result += " — %d turno(s) restante(s)" % effect["turnsLeft"]
 	var details: Array[String] = []
@@ -1166,14 +1595,28 @@ func _status_card_text(effect: Dictionary) -> String:
 	return result
 
 func _status_card_color(type: String) -> Color:
-	return Color("8ee6a1") if type in ["regen", "regenBoost", "guarding", "fury", "invisible", "evasive", "swiftFeet", "bardInspiration"] else Color("ff9a8f")
+	return Color("8ee6a1") if type in ["regen", "regenBoost", "guarding", "focus", "heronStance", "fury", "invisible", "evasive", "swiftFeet", "bardInspiration"] else Color("ff9a8f")
 
 func _build_end_screen(layer: CanvasLayer) -> void:
 	_end_screen = PanelContainer.new()
-	var board_px: float = GameConstants.BOARD_SIZE * BoardView.TILE_SIZE
+	var board_px: float = BOARD_DISPLAY_PX
 	_end_screen.position = Vector2(24 + board_px * 0.5 - 160, 64 + board_px * 0.5 - 70)
 	_end_screen.custom_minimum_size = Vector2(320, 140)
 	_end_screen.visible = false
+	# Bug relatado pelo usuário: sem stylebox próprio, o PanelContainer caía
+	# no estilo padrão do tema (quase transparente) — mesmo tratamento sólido
+	# (fundo opaco + borda + sombra) já usado em _confirm_panel/
+	# _action_menu_panel, só com tom mais sombrio pra combinar com "VOCÊ
+	# PERDEU!".
+	var end_screen_style := StyleBoxFlat.new()
+	end_screen_style.bg_color = Color("241315")
+	end_screen_style.border_color = Color("7a2c2c")
+	end_screen_style.set_border_width_all(3)
+	end_screen_style.set_corner_radius_all(10)
+	end_screen_style.set_content_margin_all(16)
+	end_screen_style.shadow_color = Color(0, 0, 0, 0.55)
+	end_screen_style.shadow_size = 10
+	_end_screen.add_theme_stylebox_override("panel", end_screen_style)
 	layer.add_child(_end_screen)
 
 	var vbox := VBoxContainer.new()
@@ -1205,7 +1648,7 @@ var _confirm_panel_style: StyleBoxFlat
 
 func _build_confirm_panel(layer: CanvasLayer) -> void:
 	_confirm_panel = PanelContainer.new()
-	var board_px: float = GameConstants.BOARD_SIZE * BoardView.TILE_SIZE
+	var board_px: float = BOARD_DISPLAY_PX
 	_confirm_panel.position = Vector2(24 + board_px * 0.5 - 190, 56)
 	_confirm_panel.custom_minimum_size = Vector2(340, 0)
 	_confirm_panel.visible = false
@@ -1309,6 +1752,32 @@ func _build_facing_panel(layer: CanvasLayer) -> void:
 	_facing_confirm_button.pressed.connect(_on_facing_confirm_pressed)
 	_facing_panel.add_child(_facing_confirm_button)
 
+	# Pedido do usuário: opção de voltar caso "Encerrar Turno" tenha sido
+	# clicado por engano — desiste sem encerrar o turno (ver
+	# _on_facing_back_pressed), restaurando a direção de antes de abrir.
+	_facing_back_button = Button.new()
+	_facing_back_button.text = "← Voltar"
+	_facing_back_button.size = Vector2(110, 42)
+	_facing_back_button.add_theme_font_size_override("font_size", 15)
+	_facing_back_button.add_theme_color_override("font_color", Color("f0e6d0"))
+	_facing_back_button.add_theme_color_override("font_hover_color", Color.WHITE)
+	var back_normal := StyleBoxFlat.new()
+	back_normal.bg_color = Color("5a4a38")
+	back_normal.border_color = Color("2e2418")
+	back_normal.set_border_width_all(3)
+	back_normal.corner_radius_top_left = 9
+	back_normal.corner_radius_top_right = 9
+	back_normal.corner_radius_bottom_left = 9
+	back_normal.corner_radius_bottom_right = 9
+	var back_hover := back_normal.duplicate() as StyleBoxFlat
+	back_hover.bg_color = Color("70604a")
+	_facing_back_button.add_theme_stylebox_override("normal", back_normal)
+	_facing_back_button.add_theme_stylebox_override("hover", back_hover)
+	_facing_back_button.add_theme_stylebox_override("pressed", back_hover)
+	_facing_back_button.tooltip_text = "Desiste de encerrar o turno"
+	_facing_back_button.pressed.connect(_on_facing_back_pressed)
+	_facing_panel.add_child(_facing_back_button)
+
 func _add_facing_button(label: String, dir: Dictionary) -> void:
 	var b := Button.new()
 	b.text = label
@@ -1374,10 +1843,17 @@ func _position_facing_controls(u: Dictionary) -> void:
 	var confirm_y: float = confirm_above_y if must_place_above else confirm_below_y
 	var max_confirm_y: float = board_bottom - _facing_confirm_button.size.y - 4.0
 	_facing_confirm_button.position = Vector2(clampf(center.x - 78, 4, 760), clampf(confirm_y, 4, max_confirm_y))
+	# "Voltar" fica logo abaixo do "Confirmar" (ou acima dele, se o confirmar
+	# já teve que subir pra caber na borda visível do tabuleiro).
+	var back_y: float = confirm_y + _facing_confirm_button.size.y + 8.0 if not must_place_above else confirm_y - _facing_back_button.size.y - 8.0
+	var max_back_y: float = board_bottom - _facing_back_button.size.y - 4.0
+	_facing_back_button.position = Vector2(clampf(center.x - 55, 4, 794), clampf(back_y, 4, max_back_y))
 
 ## true = esse time é jogado por clique humano (mostra menu/alvos e espera
 ## pela HUD); false = a IA (state.enemy_act) decide sozinha por ele.
 func _team_is_human(team: String) -> bool:
+	# Terceiro time (mortos-vivos selvagens do Cemitério): sempre pela IA.
+	if team == "neutral": return false
 	return player_is_human if team == "player" else enemy_is_human
 
 func _on_toggle_control_pressed(is_player_button: bool) -> void:
@@ -1429,6 +1905,9 @@ func _end_current_turn() -> void:
 	if state.battle_ended or state.current_actor == null:
 		return
 	var u: Dictionary = state.current_actor
+	if _online_mode:
+		OnlineEndpoint.send_action({"action": "end_turn", "actor": u["name"]})
+		return
 	if u["hp"] <= 0 or not _team_is_human(u["team"]):
 		state.advance_to_next_turn()
 		_run_ai_until_player_turn()
@@ -1459,6 +1938,7 @@ func _open_facing_picker(u: Dictionary) -> void:
 		return
 	_close_action_menu()
 	_facing_pending_unit = u
+	_facing_original_direction = u.get("facing", {}).duplicate()
 	_position_facing_controls(u)
 	for button in _facing_direction_buttons:
 		button.button_pressed = button.get_meta("direction") == u.get("facing", {})
@@ -1466,9 +1946,26 @@ func _open_facing_picker(u: Dictionary) -> void:
 
 func _on_facing_confirm_pressed() -> void:
 	_facing_panel.visible = false
+	if not _facing_pending_unit.is_empty():
+		var facing_mount = state.mount_of(_facing_pending_unit)
+		if facing_mount != null: facing_mount["facing"] = (_facing_pending_unit["facing"] as Dictionary).duplicate()
 	_facing_pending_unit = {}
 	state.advance_to_next_turn()
 	_run_ai_until_player_turn()
+
+## Pedido do usuário: desiste de encerrar o turno a partir da escolha de
+## direção — restaura a direção de antes de abrir o seletor (clicar numa
+## seta já vira o personagem na hora, só pra pré-visualizar) e devolve o
+## controle pro jogador sem avançar o turno.
+func _on_facing_back_pressed() -> void:
+	if not _facing_pending_unit.is_empty():
+		_facing_pending_unit["facing"] = _facing_original_direction
+		var token = unit_tokens.get(_facing_pending_unit["name"])
+		if token != null: (token as UnitToken).refresh()
+	_facing_panel.visible = false
+	_facing_pending_unit = {}
+	_compute_current_targets()
+	_sync_visuals()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if warrior_ab_test and OS.is_debug_build() and event is InputEventKey and event.pressed and not event.echo:
@@ -1487,15 +1984,54 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if _waiting_for_projectile_turn_end:
 		return
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if mb.pressed:
+			# Só guarda onde começou — decide clique-vs-arrasto na soltura
+			# (ver _drag_is_panning), nunca aqui.
+			_drag_pointer_down = true
+			_drag_start_pos = mb.position
+			_drag_last_pos = mb.position
+			_drag_is_panning = false
+			return
+		if not _drag_pointer_down:
+			return
+		_drag_pointer_down = false
+		var was_panning := _drag_is_panning
+		_drag_is_panning = false
+		if was_panning:
+			# Arrastou de verdade: soltar não seleciona, move nem ataca.
+			if board_view.can_pan(): Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+			get_viewport().set_input_as_handled()
+			return
+		_handle_board_click_at_mouse()
+		return
 	if event is InputEventMouseMotion:
+		var mm := event as InputEventMouseMotion
+		if _drag_pointer_down:
+			if not _drag_is_panning and mm.position.distance_to(_drag_start_pos) > DRAG_PAN_THRESHOLD_PX and board_view.can_pan():
+				_drag_is_panning = true
+				Input.set_default_cursor_shape(Input.CURSOR_DRAG)
+			if _drag_is_panning:
+				# Continua acompanhando o gesto mesmo se o ponteiro sair da
+				# área do tabuleiro — _unhandled_input recebe o movimento
+				# global, não só o que acontece dentro de _board_clip.
+				board_view.pan_view_by(mm.position - _drag_last_pos)
+				_drag_last_pos = mm.position
+				_sync_board_scroll()
+				get_viewport().set_input_as_handled()
+				return
 		var hovered = board_view.tile_at_local_pos(board_view.get_local_mouse_position())
 		_update_combat_hover(hovered)
 		return
-	if not (event is InputEventMouseButton):
-		return
-	var mb := event as InputEventMouseButton
-	if not (mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT):
-		return
+
+## Mesma lógica de clique que sempre existiu (seleção/inspeção/mover/atacar
+## pelo tile sob o mouse) — extraída pra função própria só pra poder ser
+## chamada exclusivamente na SOLTURA do botão (ver _unhandled_input), depois
+## de já sabermos que não foi um arrasto.
+func _handle_board_click_at_mouse() -> void:
 	# Popup de confirmação de área ou painel de direção abertos: mesma trava
 	# do overlay do modal no JS original — nenhum clique no tabuleiro conta
 	# enquanto eles existirem.
@@ -1606,8 +2142,37 @@ func _open_structure_info(structure: Dictionary) -> void:
 		_add_info_text(String(info.get("desc", "")))
 	_unit_info_panel.visible = true
 
+## Executor da ação em andamento: a montaria (quando o item escolhido é dela)
+## enquanto há mira ativa; senão, o dono do turno.
+func _active_caster() -> Dictionary:
+	if pending_caster != null and mode in ["attack", "spell"] and int(pending_caster.get("hp", 0)) > 0:
+		return pending_caster
+	return state.current_actor
+
+## Item pertence à montaria do herói montado? Devolve ela; senão, o ator do turno.
+func _caster_for_item(item: Dictionary) -> Dictionary:
+	var actor: Dictionary = state.current_actor
+	var carried = state.mount_of(actor)
+	if carried != null:
+		for key in ["weapons", "spells"]:
+			for candidate in carried.get(key, []):
+				if candidate == item:
+					return carried
+	return actor
+
+## Itens do menu: os do ator + (montado) os da Vestruz, cada um com quem executa.
+func _menu_items(u: Dictionary, key: String) -> Array:
+	var entries: Array = []
+	for candidate in u.get(key, []):
+		entries.append({"item": candidate, "caster": u})
+	var carried = state.mount_of(u)
+	if carried != null:
+		for candidate in carried.get(key, []):
+			entries.append({"item": candidate, "caster": carried})
+	return entries
+
 func _handle_tile_click(x: int, y: int) -> void:
-	var u: Dictionary = state.current_actor
+	var u: Dictionary = _active_caster()
 
 	# Clicar no próprio token: cancela a mira em andamento, ou abre/fecha o
 	# menu de ações se já estiver no modo "idle".
@@ -1663,22 +2228,13 @@ func _handle_tile_click(x: int, y: int) -> void:
 	# Modo idle: tile azul move; alvo vermelho ataca com a melhor arma
 	# disponível automaticamente (atalho sem precisar abrir o menu).
 	if not u.get("hasMoved", false):
+		var mount_here = state.unit_at(x, y)
+		if mount_here != null and mount_here.get("isMount", false) and state.can_mount(u, mount_here):
+			_request_mount_confirmation(u, mount_here)
+			return
 		for t in reachable_tiles:
 			if t["x"] == x and t["y"] == y:
-				var movement_before := _capture_combat_snapshot()
-				var movement_log_start := state.event_log.size()
-				var souls_before: Array = state.souls.duplicate(true)
-				var movement_path: Array = state.reconstruct_path(x, y).duplicate(true)
-				state.perform_move(u, {"x": x, "y": y})
-				var moving_token = unit_tokens.get(u["name"])
-				if moving_token != null: (moving_token as UnitToken).animate_path(movement_path)
-				_play_water_path_vfx(movement_path)
-				_play_collected_soul_effects(souls_before)
-				_play_new_tower_trap_effects()
-				_show_combat_changes(movement_before, movement_log_start, 0.12)
-				if _handle_dungeon_stair_transition(u):
-					return
-				_after_action()
+				_request_move_confirmation(u, x, y)
 				return
 
 	if not u.get("hasActed", false):
@@ -1850,15 +2406,52 @@ func _render_menu_root() -> void:
 	_clear_action_menu()
 	var u: Dictionary = state.current_actor
 	var has_acted: bool = u.get("hasActed", false)
-	var can_move: bool = not u.get("hasMoved", false) and not state.is_rooted(u)
-	var weapons: Array = u.get("weapons", [])
-	var available_spells: Array = u.get("spells", []).filter(func(s): return _spell_is_available(u, s))
+	var can_move: bool = not u.get("hasMoved", false) and not u.get("cannotMoveThisTurn", false) and not state.is_rooted(u)
+	var weapon_entries: Array = _menu_items(u, "weapons")
+	var available_spells: Array = _menu_items(u, "spells").filter(func(e): return _spell_is_available(e["caster"], e["item"]))
 
 	_add_menu_button("🏃 Mover", func(): _close_action_menu(), not can_move)
-	_add_menu_button("🗡 Atacar", func(): _render_attack_submenu(), has_acted or weapons.is_empty() or state.is_bard_singing(u))
+	_add_menu_button("🗡 Atacar", func(): _render_attack_submenu(), has_acted or weapon_entries.is_empty() or state.is_bard_singing(u))
 	_add_menu_button("✨ Habilidade", func(): _render_spell_submenu(), available_spells.is_empty())
+	# Montaria (Vestruz): ação visível de montar/desmontar.
+	if state.mount_of(u) != null:
+		var dismount_button := _add_menu_button("⬇ Desmontar da %s" % state.mount_of(u)["name"], func(): _start_dismount(), state.dismount_tiles(u).is_empty())
+		dismount_button.tooltip_text = "Desce para um quadrado livre e válido ao redor."
+	else:
+		# Montar: aparece sempre que há uma montaria aliada adjacente (também
+		# depois de o herói ter se movido até o lado dela).
+		for candidate in state.units:
+			if candidate.get("isMount", false) and candidate["team"] == u["team"] and candidate["hp"] > 0 and candidate != u and state.manhattan(u, candidate) == 1 and candidate.get("riderName", "") == "":
+				var mount_ref: Dictionary = candidate
+				var mount_button := _add_menu_button("🐦 Montar na %s" % candidate["name"], func(): _request_mount_confirmation(u, mount_ref), not state.can_mount(u, candidate))
+				mount_button.tooltip_text = "Sobe na montaria adjacente. A dupla ocupa o mesmo quadrado, voa e age no turno do cavaleiro."
 	_add_menu_button("🏁 Encerrar Turno", _on_menu_end_turn_pressed)
 	_add_menu_button("Cancelar", func(): _close_action_menu())
+
+func _mount_on(rider: Dictionary, mount: Dictionary) -> void:
+	_close_action_menu()
+	if _online_mode:
+		OnlineEndpoint.send_action({"action": "mount", "actor": rider["name"], "x": mount["x"], "y": mount["y"]})
+		return
+	if not state.mount_unit(rider, mount):
+		return
+	if effects_layer != null:
+		effects_layer.spawn_combat_popup(board_view.tile_center(mount["x"], mount["y"]), "MONTADO!", "buff", 0.0, 0)
+		AudioEngine.play_event("wind", AudioEngine.pan_for_x(int(mount["x"])))
+	_sync_visuals()
+	_after_action()
+
+func _start_dismount() -> void:
+	_close_action_menu()
+	_clear_aoe_preview()
+	var u: Dictionary = state.current_actor
+	mode = "spell"
+	pending_item = {"name": "Desmontar", "icon": "⬇", "targetMode": "dismount"}
+	pending_caster = null
+	attackable_units = []
+	attack_range_tiles = []
+	spell_tiles = state.dismount_tiles(u)
+	_sync_visuals()
 
 func _on_menu_end_turn_pressed() -> void:
 	_close_action_menu()
@@ -1867,18 +2460,52 @@ func _on_menu_end_turn_pressed() -> void:
 func _render_attack_submenu() -> void:
 	_clear_action_menu()
 	var u: Dictionary = state.current_actor
-	for w in u.get("weapons", []):
-		var button := _add_menu_button("🗡 %s" % w["name"], func(): _select_attack_item(w))
-		button.tooltip_text = _combat_item_tooltip(w)
+	for entry in _menu_items(u, "weapons"):
+		var w: Dictionary = entry["item"]
+		var weapon_caster: Dictionary = entry["caster"]
+		# Pedido do usuário: cada arma usa o próprio ícone (já existia em
+		# data/weapons.gd, mas o botão sempre mostrava "🗡" fixo, escondendo a
+		# diferença entre ataques do mesmo personagem).
+		# Rajada de Golpes (Monge) é o primeiro ataque do jogo que custa MP:
+		# mostra o custo no botão e trava quando não dá pra pagar, mesma
+		# regra que get_attack_options já aplica no atalho do tile vermelho.
+		var mp_cost: int = int(w.get("mpCost", 0))
+		var missing_mp: bool = mp_cost > 0 and int(weapon_caster.get("mp", 0)) < mp_cost
+		var label := "%s %s" % [w.get("icon", "🗡"), w["name"]]
+		if mp_cost > 0: label += " — %d MP" % mp_cost
+		if weapon_caster != u: label += " (%s)" % weapon_caster["name"]
+		var button := _add_menu_button(label, func(): _select_attack_item(w), missing_mp)
+		button.tooltip_text = _combat_item_tooltip(w) + ("\nIndisponível: MP insuficiente." if missing_mp else "")
 	_add_menu_button("← Voltar", func(): _render_menu_root())
+
+## Pedido do usuário: toda habilidade/magia mostra o custo de MP/CT no próprio
+## botão (não só no tooltip ao passar o mouse), igual já acontecia só com a
+## Chuva de Flechas do Arqueiro (que tinha o texto "— 5 MP / CT 0" fixo no
+## código). Generalizado pra ler mpCost/ctCost de cada magia em vez de
+## números fixos, mantendo o aviso "ATIVA" da Chuva de Flechas quando ela já
+## foi preparada neste turno.
+func _spell_cost_label(s: Dictionary, u: Dictionary) -> String:
+	var cost := " — %d MP / CT %d" % [s.get("mpCost", 0), s.get("ctCost", 0)]
+	if s.get("kind", "") == "arrow-rain" and u.get("arrowRainPrepared", false):
+		return " — ATIVA (%d MP / CT %d)" % [s.get("mpCost", 0), s.get("ctCost", 0)]
+	return cost
 
 func _render_spell_submenu() -> void:
 	_clear_action_menu()
 	var u: Dictionary = state.current_actor
-	for s in u.get("spells", []):
-		var available := _spell_is_available(u, s)
-		var button := _add_menu_button("✨ %s" % s["name"], func(): _select_spell_item(s), not available)
-		button.tooltip_text = _combat_item_tooltip(s) + ("\nIndisponível: MP insuficiente ou ação já utilizada." if not available else "")
+	for spell_entry in _menu_items(u, "spells"):
+		var s: Dictionary = spell_entry["item"]
+		var spell_caster: Dictionary = spell_entry["caster"]
+		var available := _spell_is_available(spell_caster, s)
+		# Pedido do usuário: cada magia/habilidade usa o próprio ícone (idem
+		# acima) em vez do "✨" fixo, pra distinguir de cara as magias da Maga,
+		# por exemplo.
+		var owner_note := " (%s)" % spell_caster["name"] if spell_caster != u else ""
+		var button := _add_menu_button("%s %s%s%s" % [s.get("icon", "✨"), s["name"], _spell_cost_label(s, spell_caster), owner_note], func(): _select_spell_item(s), not available)
+		var unavailable_reason := "MP insuficiente ou ação já utilizada."
+		if not state.item_requirements_met(spell_caster, s):
+			unavailable_reason = "só pode ser usada com menos de %d%% do HP máximo (%d HP ou menos)." % [roundi(float(s["requiresHpBelowRatio"]) * 100.0), int(ceil(float(spell_caster["maxHp"]) * float(s["requiresHpBelowRatio"]))) - 1]
+		button.tooltip_text = _combat_item_tooltip(s) + ("\nIndisponível: %s" % unavailable_reason if not available else "")
 	_add_menu_button("← Voltar", func(): _render_menu_root())
 
 func _clear_action_menu() -> void:
@@ -1934,11 +2561,14 @@ func _add_menu_button(label: String, callback: Callable, disabled: bool = false)
 
 func _combat_item_tooltip(item: Dictionary) -> String:
 	var lines: Array[String] = [String(item.get("name", ""))]
+	if item.has("tooltipNote"): lines.append(String(item["tooltipNote"]).replace("<br>", "\n"))
 	if item.has("damageMin"): lines.append("Dano: %d-%d" % [item.get("damageMin", 0), item.get("damageMax", 0)])
 	if item.has("healMin"): lines.append("Cura: %d-%d" % [item.get("healMin", 0), item.get("healMax", 0)])
 	if item.has("mpCost"): lines.append("MP: %d" % item.get("mpCost", 0))
 	if item.has("ctCost"): lines.append("CT: %d" % item.get("ctCost", 0))
-	if item.has("range") or item.has("maxRange"): lines.append("Alcance: %d" % item.get("range", item.get("maxRange", 0)))
+	if item.has("reach"): lines.append("Alcance: %d (avança até %d)" % [item["reach"], item.get("advanceMax", 0)])
+	elif item.has("range") or item.has("maxRange"): lines.append("Alcance: %d" % item.get("range", item.get("maxRange", 0)))
+	elif item.get("targetMode", "") == "self": lines.append("Alcance: si mesmo")
 	if item.has("hitChance"): lines.append("Acerto: %d%%" % roundi(float(item.get("hitChance", 0.0)) * 100.0))
 	if item.has("critChance"): lines.append("Crítico: %d%%" % roundi(float(item.get("critChance", 0.0)) * 100.0))
 	if item.has("turns"): lines.append("Duração: %d turno(s)" % item.get("turns", 0))
@@ -1948,13 +2578,20 @@ func _combat_item_tooltip(item: Dictionary) -> String:
 ## custa CT de verdade — as "livres" (ctCost 0) ficam disponíveis até a
 ## própria cast_self_ability recusar (ex: já usada neste turno).
 func _spell_is_available(u: Dictionary, s: Dictionary) -> bool:
+	if s.get("kind", "") == "arrow-rain" and u.get("arrowRainPrepared", false): return false
 	if u["mp"] < s.get("mpCost", 0):
 		return false
-	if s.get("ctCost", 0) > 0 and u.get("hasActed", false):
+	if s.get("ctCost", 0) > 0 and state.turn_owner(u).get("hasActed", false):
+		return false
+	# Última Determinação (Samurai): só com HP abaixo de 40% do máximo.
+	if not state.item_requirements_met(u, s):
 		return false
 	return true
 
 func _select_attack_item(item: Dictionary) -> void:
+	if state.is_arrow_rain_attack(state.current_actor, item):
+		_select_spell_item(state.arrow_rain_item(item))
+		return
 	if state.is_bard_singing(state.current_actor):
 		_show_scenario_banner("🎵 O Bardo está cantando e não pode usar a Besta.")
 		return
@@ -1968,7 +2605,8 @@ func _select_attack_item(item: Dictionary) -> void:
 		return
 	_close_action_menu()
 	_clear_aoe_preview()
-	var u: Dictionary = state.current_actor
+	var u: Dictionary = _caster_for_item(item)
+	pending_caster = u if u != state.current_actor else null
 	mode = "attack"
 	pending_item = item
 	attackable_units = []
@@ -1990,12 +2628,18 @@ func _select_attack_item(item: Dictionary) -> void:
 	_sync_visuals()
 
 func _select_spell_item(item: Dictionary) -> void:
+	if _waiting_for_projectile_turn_end: return
+	if item.get("targetMode", "") == "pierce-line" and state.is_arrow_rain_attack(state.current_actor, item): item = state.arrow_rain_item(item)
 	_close_action_menu()
 	_clear_aoe_preview()
-	var u: Dictionary = state.current_actor
+	var u: Dictionary = _caster_for_item(item)
+	pending_caster = u if u != state.current_actor else null
 	var tm: String = item.get("targetMode", "")
 
 	if tm == "self":
+		if String(item.get("kind", "")).begins_with("bard-song"):
+			_resolve_spell(u, item, u["x"], u["y"])
+			return
 		var self_token = unit_tokens.get(u["name"])
 		if self_token != null: (self_token as UnitToken).play_warrior_skill_visual(item)
 		_play_self_ability_vfx(u, item)
@@ -2015,45 +2659,15 @@ func _select_spell_item(item: Dictionary) -> void:
 		if item.get("kind", "") == "explosive-shot" and not u.get("hasActed", false) and not caster_weapons.is_empty():
 			_select_attack_item(caster_weapons[0])
 			return
+		# Saque Rápido (Samurai) só potencializa golpe de ESPADA: vai direto
+		# pra mira da espada (1ª arma), sem obrigar Atacar > Espada.
+		if item.get("kind", "") == "quick-draw" and not u.get("hasActed", false) and not caster_weapons.is_empty():
+			_select_attack_item(caster_weapons[0])
+			return
 		_after_action()
 		return
-	if tm == "self-attack":
-		_play_self_ability_vfx(u, item)
-		# ETAPA 16 — Signature Ability do Guerreiro (Ataque Giratório): mesmo
-		# golpe nas 8 casas de sempre, só com antecipação de peso (via
-		# play_weighted_attack, já existente para melee direcional) antes do
-		# giro e reação de ambiente/câmera mais cheia no golpe.
-		var spin_signature := SignatureVisualProfiles.for_item(u, item)
-		var origin_center := board_view.tile_center(u["x"], u["y"])
-		var token = unit_tokens.get(u["name"])
-		var facing: Dictionary = u.get("facing", {"dx": 1, "dy": 0})
-		var facing_dir := Vector2(float(facing.get("dx", 1)), float(facing.get("dy", 0)))
-		if facing_dir == Vector2.ZERO: facing_dir = Vector2.RIGHT
-		if token != null:
-			var used_skill_visual := (token as UnitToken).play_warrior_skill_visual(item, origin_center + facing_dir * 40.0)
-			if not used_skill_visual and not spin_signature.is_empty():
-				(token as UnitToken).play_weighted_attack(origin_center + facing_dir * 40.0, false)
-		if effects_layer != null:
-			var centers: Array = []
-			for dx in range(-1, 2):
-				for dy in range(-1, 2):
-					if dx != 0 or dy != 0:
-						centers.append(board_view.tile_center(u["x"] + dx, u["y"] + dy))
-			if item.get("kind", "") == "growth-attack" and item.get("damageType", "") == "fire":
-				effects_layer.spawn_fireblast_area(centers, origin_center)
-			else:
-				var sweep_delay := float(spin_signature.get("prepare_delay", 0.0))
-				var fire_sweep := func():
-					effects_layer.spawn_sweep(centers, Color(1.0, 0.82, 0.35), "slash", origin_center)
-					if not spin_signature.is_empty():
-						effects_layer.emit_environment_reaction("heavy_impact", origin_center, facing_dir, String(spin_signature.get("environment_intensity", "signature")), String(spin_signature.get("environment_element", "")))
-						board_view.shake_camera_at(origin_center, facing_dir, 1.3, 0.09, false)
-				if sweep_delay > 0.0:
-					get_tree().create_timer(sweep_delay).timeout.connect(fire_sweep)
-				else:
-					fire_sweep.call()
-		state.cast_growth_attack(u, item)
-		_after_action()
+	if tm == "self-attack" or tm == "self-aoe":
+		_resolve_spell(u, item, u["x"], u["y"])
 		return
 
 	mode = "spell"
@@ -2061,6 +2675,15 @@ func _select_spell_item(item: Dictionary) -> void:
 	attackable_units = []
 	attack_range_tiles = []
 	spell_tiles = _compute_targetable_tiles(u, item, tm)
+	# Corte Iaijutsu: mostra TODO o alcance da corrida (casas em azul-vermelho do
+	# alcance), não só os inimigos clicáveis, mesmo sem ninguém na linha.
+	if tm == "iaijutsu":
+		attack_range_tiles = state.compute_iaijutsu_range_tiles(u, item)
+	# Nuvem de Poeira / Cura da Vestruz: a área já aparece ao escolher; clicar na
+	# própria Vestruz abre a confirmação.
+	if tm == "dust-square" or tm == "heal-cross":
+		aoe_preview_target = {"x": u["x"], "y": u["y"]}
+		aoe_preview_tiles = state.compute_aoe_area_tiles(u, item, aoe_preview_target)
 	_sync_visuals()
 
 ## Mesmo despacho por targetMode do onTileClick original (game.js:4130-4156)
@@ -2072,8 +2695,25 @@ func _select_spell_item(item: Dictionary) -> void:
 ## num alvo fora do eixo, ou usar Arremessar Espada na diagonal (a receita
 ## do item diz "só nas 4 direções cardeais").
 func _compute_targetable_tiles(u: Dictionary, item: Dictionary, target_mode: String) -> Array:
+	if item.get("rainBaseMode", "") == "pierce-line": return state.compute_line_target_tiles(u, item, true)
 	if target_mode == "charge":
-		return state.compute_charge_targets(u)
+		return state.compute_charge_targets(u, item)
+	if target_mode == "slime-jump":
+		return state.compute_slime_jump_targets(u, item)
+	if target_mode == "iaijutsu":
+		return state.compute_iaijutsu_targets(u, item)
+	if target_mode == "vestruz-dash":
+		return state.compute_vestruz_dash_tiles(u, item)
+	if target_mode == "dust-square" or target_mode == "heal-cross":
+		return [{"x": u["x"], "y": u["y"]}]
+	if target_mode == "dismount":
+		return state.dismount_tiles(u)
+	# Chute do Dragão: mesma mira do Relâmpago da Maga — só linhas retas (4
+	# cardeais + 4 diagonais) até o alcance, sem exigir linha de visão.
+	if target_mode == "dragon-kick":
+		return state.compute_line_target_tiles(u, item)
+	if target_mode == "crescent-arc":
+		return state.compute_crescent_anchor_tiles(u)
 	if target_mode == "line-aoe":
 		return state.compute_line_target_tiles(u, item)
 	if target_mode == "cardinal-blast" or target_mode == "creeping-line" or target_mode == "flame-creeping-line":
@@ -2083,6 +2723,56 @@ func _compute_targetable_tiles(u: Dictionary, item: Dictionary, target_mode: Str
 	if item.get("cardinalOnly", false):
 		return state.compute_line_target_tiles(u, item, true)
 	return state.compute_range_tiles(u, item)
+
+## Popup de confirmação de movimento (pedido do usuário): mover só executa
+## depois de confirmar, com Cancelar reabrindo a escolha de tile (reachable_
+## tiles continua intacto até aqui, então cancelar não perde o alcance de
+## movimento já calculado) — mesmo _confirm_panel genérico da confirmação de
+## ataque, só trocando texto/callback.
+func _request_move_confirmation(u: Dictionary, x: int, y: int) -> void:
+	_confirm_title_label.text = "🏃 Mover"
+	_confirm_body_label.text = "Mover %s para este local?" % u.get("name", "")
+	_confirm_ok_button.text = "Mover"
+	_confirm_cancel_button.text = "Cancelar"
+	pending_confirm_action = func(): _perform_confirmed_move(u, x, y)
+	_confirm_panel_set_accent(Color(ATTACK_ACCENT_DEFAULT))
+	_position_confirm_panel_near_unit(u)
+
+## Montar: o herói se move para cima da montaria adjacente; o clique nesse
+## quadrado abre esta confirmação (mesmo painel do movimento comum).
+func _request_mount_confirmation(u: Dictionary, mount: Dictionary) -> void:
+	_confirm_title_label.text = "🐦 Montar"
+	_confirm_body_label.text = "Mover %s para cima de %s e montar?
+A dupla ocupa o mesmo quadrado, voa (MOV %d) e age no turno de %s." % [u.get("name", ""), mount["name"], int(mount["moveRange"]), u.get("name", "")]
+	_confirm_ok_button.text = "Montar"
+	_confirm_cancel_button.text = "Cancelar"
+	pending_confirm_action = func(): _mount_on(u, mount)
+	_confirm_panel_set_accent(Color(ATTACK_ACCENT_DEFAULT))
+	_position_confirm_panel_near_unit(u)
+
+func _perform_confirmed_move(u: Dictionary, x: int, y: int) -> void:
+	if _online_mode:
+		OnlineEndpoint.send_action({"action": "move", "actor": u["name"], "x": x, "y": y})
+		_close_confirm_panel()
+		return
+	var movement_before := _capture_combat_snapshot()
+	var movement_log_start := state.event_log.size()
+	var souls_before: Array = state.souls.duplicate(true)
+	var movement_path: Array = state.reconstruct_path(x, y).duplicate(true)
+	state.perform_move(u, {"x": x, "y": y})
+	var moving_token = unit_tokens.get(u["name"])
+	if moving_token != null: (moving_token as UnitToken).animate_path(movement_path)
+	var carrying_mount = state.mount_of(u)
+	if carrying_mount != null:
+		var mount_token = unit_tokens.get(carrying_mount["name"])
+		if mount_token != null: (mount_token as UnitToken).animate_path(movement_path)
+	_play_water_path_vfx(movement_path)
+	_play_collected_soul_effects(souls_before)
+	_play_new_tower_trap_effects()
+	_show_combat_changes(movement_before, movement_log_start, 0.12)
+	if _handle_dungeon_stair_transition(u):
+		return
+	_after_action()
 
 ## Popup de confirmação de ataque (pedido do usuário): mostra a chance de
 ## acerto detalhada (base + cada modificador que está valendo, ver
@@ -2184,6 +2874,13 @@ func _format_expected_damage_lines(preview: Dictionary, item: Dictionary) -> Arr
 	return lines
 
 func _resolve_attack(u: Dictionary, target: Dictionary, weapon: Dictionary) -> void:
+	if _online_mode:
+		OnlineEndpoint.send_action({"action": "attack", "actor": u["name"], "x": target["x"], "y": target["y"], "item": weapon})
+		_close_confirm_panel()
+		return
+	if state.is_arrow_rain_attack(u, weapon):
+		_resolve_spell(u, state.arrow_rain_item(weapon), target["x"], target["y"])
+		return
 	board_view.fade_action_feedback()
 	if combat_feedback != null: combat_feedback.clear_targets()
 	var combat_before := _capture_combat_snapshot()
@@ -2202,7 +2899,7 @@ func _resolve_attack(u: Dictionary, target: Dictionary, weapon: Dictionary) -> v
 	# Raio de Gelo (weapons.gd:"iceRay") em vez de um VFX próprio.
 	elif projectile_variant == "arrow" and u.get("slowNextAttackAlwaysTurns", 0) > 0:
 		projectile_variant = "frost-wand-spd"
-	elif projectile_variant == "arrow" and u.get("spriteKey", "") == "arqueiro":
+	elif projectile_variant == "arrow" and u.get("spriteKey", "") in ["arqueiro", "samurai"]:
 		projectile_variant = "huntress-arrow-spd"
 	elif projectile_variant == "bullet" and u.get("burnNextAttackTurns", 0) > 0:
 		projectile_variant = "bullet-explosive"
@@ -2212,6 +2909,7 @@ func _resolve_attack(u: Dictionary, target: Dictionary, weapon: Dictionary) -> v
 		state.perform_ranged_attack_with_obstruction(u, target, weapon)
 	else:
 		state.perform_attack(u, target, weapon)
+	var missile_damages: Array = state.last_action_vfx.get("missileDamages", []) if weapon.get("name", "") == "Míssil Mágico" else []
 	var attack_log := "\n".join(state.event_log.slice(log_start)).to_lower()
 	vfx_hit = vfx_hit and not ("errou" in attack_log or "não acerta" in attack_log or "só pode ser atingida" in attack_log)
 	var vfx_critical := "crítico" in attack_log
@@ -2224,10 +2922,11 @@ func _resolve_attack(u: Dictionary, target: Dictionary, weapon: Dictionary) -> v
 	# de direção só pode abrir quando o projétil realmente tocar o alvo.
 	# Tiro Rápido não entra aqui no primeiro disparo, pois ainda deixa o
 	# segundo ataque disponível com o mesmo arco.
-	var bonus_restriction = u.get("bonusAttackWeaponRestriction")
-	var continues_quick_shot: bool = bonus_restriction != null and not u.get("hasActed", false) and bonus_restriction.get("name", "") == weapon.get("name", "")
-	var moved_or_cannot_move: bool = u.get("hasMoved", false) or state.is_rooted(u)
-	var turn_will_end: bool = moved_or_cannot_move and u.get("hasActed", false) and not continues_quick_shot
+	var turn_unit_of_attacker: Dictionary = state.turn_owner(u)
+	var bonus_restriction = turn_unit_of_attacker.get("bonusAttackWeaponRestriction")
+	var continues_quick_shot: bool = bonus_restriction != null and not turn_unit_of_attacker.get("hasActed", false) and bonus_restriction.get("name", "") == weapon.get("name", "")
+	var moved_or_cannot_move: bool = turn_unit_of_attacker.get("hasMoved", false) or state.is_rooted(turn_unit_of_attacker)
+	var turn_will_end: bool = moved_or_cannot_move and turn_unit_of_attacker.get("hasActed", false) and not continues_quick_shot
 	var wait_for_projectile: bool = weapon.has("projectile") and turn_will_end
 	# Durante qualquer revide a interface fica bloqueada, mesmo quando ainda
 	# restaria movimento, para não permitir outra ação no meio da animação.
@@ -2247,6 +2946,12 @@ func _resolve_attack(u: Dictionary, target: Dictionary, weapon: Dictionary) -> v
 			else:
 				_waiting_for_projectile_turn_end = false
 				_after_action()
+	# Golpe múltiplo corpo a corpo (Rajada de Golpes): o atacante golpeia DUAS
+	# vezes na tela, cada uma com a própria animação/impacto/popup.
+	var multi_shots: Array = state.last_action_vfx.get("shotResults", []) if int(weapon.get("hits", 1)) > 1 and not weapon.has("projectile") else []
+	if multi_shots.size() >= 1:
+		_play_multi_strike(u, vfx_tile, weapon, multi_shots, counter_happened, target)
+		return
 	_play_attack_vfx(u, vfx_tile, weapon, vfx_hit, projectile_variant, after_projectile, vfx_critical)
 	var popup_kind: String = projectile_variant if projectile_variant != "" else weapon.get("projectile", "")
 	var popup_delay := _projectile_duration_for_kind(popup_kind) if weapon.has("projectile") else 0.10
@@ -2255,7 +2960,10 @@ func _resolve_attack(u: Dictionary, target: Dictionary, weapon: Dictionary) -> v
 		popup_delay = acting_token.visual_3d_event_time("attack_light",0.305)
 	if popup_kind == "frost-wand-spd":
 		popup_delay = board_view.tile_center(u["x"], u["y"]).distance_to(board_view.tile_center(vfx_tile["x"], vfx_tile["y"])) / EffectsLayer.SPD_FROST_WORLD_SPEED
-	_show_combat_changes(combat_before, log_start, popup_delay, target, u, target)
+	if weapon.get("name", "") == "Míssil Mágico":
+		_show_magic_missile_changes(missile_damages, target, u)
+	else:
+		_show_combat_changes(combat_before, log_start, popup_delay, target, u, target)
 	# Tiro Rápido: o motor mantém a restrição ao Arco entre o primeiro e o
 	# segundo disparo. Conserva a mesma arma selecionada e volta direto à
 	# mira, sem obrigar o jogador a abrir Atacar > Arco novamente.
@@ -2277,6 +2985,48 @@ func _resolve_attack(u: Dictionary, target: Dictionary, weapon: Dictionary) -> v
 			)
 		else:
 			_after_action()
+
+## Intervalo entre os golpes de um ataque múltiplo (Rajada de Golpes).
+const MULTI_STRIKE_INTERVAL := 0.6
+
+## Executa na tela cada golpe de `shots` (resultado de perform_attack): pose de
+## soco + impacto, popup próprio (dano/CRÍTICO/MISS) e reação do alvo, um a um.
+## O turno só segue depois do último golpe (e de um eventual revide).
+func _play_multi_strike(attacker: Dictionary, target_tile: Dictionary, weapon: Dictionary, shots: Array, counter_happened: bool, target: Dictionary) -> void:
+	_waiting_for_projectile_turn_end = true
+	mode = "idle"
+	var visual_target = state.unit_at(target_tile["x"], target_tile["y"])
+	var hit_token = unit_tokens.get(target.get("name", ""))
+	for index in shots.size():
+		var shot: Dictionary = shots[index]
+		var strike_delay := float(index) * MULTI_STRIKE_INTERVAL
+		var play_strike := func():
+			if effects_layer == null or not is_instance_valid(effects_layer): return
+			_play_attack_vfx(attacker, target_tile, weapon, bool(shot["hit"]), "", Callable(), bool(shot["critical"]))
+			var center := board_view.tile_center(target_tile["x"], target_tile["y"])
+			if hit_token != null and is_instance_valid(hit_token): center = (hit_token as UnitToken).visual_impact_point()
+			var popup_delay := 0.30
+			if bool(shot["hit"]):
+				effects_layer.spawn_combat_popup(center, str(-int(shot["damage"])), "crit" if bool(shot["critical"]) else "damage", popup_delay, 0)
+				if hit_token != null and is_instance_valid(hit_token):
+					var origin := board_view.tile_center(attacker["x"], attacker["y"])
+					var reaction_timer := get_tree().create_timer(popup_delay)
+					reaction_timer.timeout.connect(func():
+						if is_instance_valid(hit_token): (hit_token as UnitToken).play_weighted_hit_reaction(origin, bool(shot["critical"]))
+					)
+			else:
+				effects_layer.spawn_combat_popup(center, "MISS", "miss", popup_delay, 0)
+		if index == 0:
+			play_strike.call()
+		else:
+			get_tree().create_timer(strike_delay).timeout.connect(play_strike)
+	_sync_visuals()
+	var total_wait := float(shots.size() - 1) * MULTI_STRIKE_INTERVAL + 0.6
+	if counter_happened: total_wait += COUNTER_RESOLVE_EXTRA_WAIT
+	get_tree().create_timer(total_wait).timeout.connect(func():
+		_waiting_for_projectile_turn_end = false
+		_after_action()
+	)
 
 func _combat_has_counter(log_start: int) -> bool:
 	for line in state.event_log.slice(log_start):
@@ -2304,7 +3054,7 @@ func _play_attack_vfx(attacker: Dictionary, target_tile: Dictionary, item: Dicti
 	if attacker_token != null and item.has("projectile") and release_delay > 0.0 and not character_skill_visual:
 		(attacker_token as UnitToken).play_ranged_release(board_view.tile_center(target_tile["x"], target_tile["y"]), release_delay)
 	elif attacker_token != null and not profiled_melee and not character_skill_visual:
-		(attacker_token as UnitToken).play_attack()
+		(attacker_token as UnitToken).play_attack(UnitToken.ATTACK_ACTION_DURATION, String(item.get("spriteAction", "attack")))
 	# Som (equivalente a playAttackFx no JS: mesmo item.sfx do golpe, sem
 	# distinguir acerto/erro da rolagem — mesma simplificação já usada pro
 	# VFX, ver nota do STATUS.md) — toca mesmo sem effects_layer.
@@ -2321,12 +3071,15 @@ func _play_attack_vfx(attacker: Dictionary, target_tile: Dictionary, item: Dicti
 		return
 	var to_pos: Vector2 = board_view.tile_center(target_tile["x"], target_tile["y"])
 	if attacker_token != null and profiled_melee:
-		(attacker_token as UnitToken).play_weighted_attack(to_pos, critical)
+		(attacker_token as UnitToken).play_weighted_attack(to_pos, critical, String(item.get("spriteAction", "attack")))
 	var visual_target = state.unit_at(target_tile["x"], target_tile["y"])
 	if visual_target != null:
 		var visual_target_token = unit_tokens.get(visual_target.get("name", ""))
 		if visual_target_token != null: to_pos = (visual_target_token as UnitToken).visual_impact_point()
 	if item.has("projectile"):
+		if projectile_kind == "magic-missile-spd":
+			_play_magic_missile_vfx(attacker, target_tile, item, hit, on_visual_complete)
+			return
 		var color := _vfx_color_for_kind(projectile_kind)
 		var logical_origin := board_view.tile_center(attacker["x"], attacker["y"])
 		var from_pos: Vector2 = (attacker_token as UnitToken).projectile_visual_origin(to_pos, projectile_kind) if attacker_token != null else logical_origin
@@ -2386,6 +3139,52 @@ func _play_attack_vfx(attacker: Dictionary, target_tile: Dictionary, item: Dicti
 		AudioEngine.play_event("miss", AudioEngine.pan_for_x(target_tile["x"]))
 		if on_visual_complete.is_valid(): on_visual_complete.call()
 
+func _play_magic_missile_vfx(attacker: Dictionary, target_tile: Dictionary, item: Dictionary, hit: bool, on_visual_complete: Callable) -> void:
+	var attacker_token = unit_tokens.get(attacker["name"])
+	var target_pos := board_view.tile_center(target_tile["x"], target_tile["y"])
+	var visual_target = state.unit_at(target_tile["x"], target_tile["y"])
+	if visual_target != null:
+		var target_token = unit_tokens.get(visual_target.get("name", ""))
+		if target_token != null: target_pos = (target_token as UnitToken).visual_impact_point()
+	var origin := (attacker_token as UnitToken).projectile_visual_origin(target_pos, "magic-missile-spd") if attacker_token != null else board_view.tile_center(attacker["x"], attacker["y"])
+	var missile_count := maxi(1, int(item.get("hits", 4)))
+	var missile_spacing := 0.18
+	var missile_duration := clampf(origin.distance_to(target_pos) / 780.0, 0.28, 0.62)
+	var finished := false
+	for index in missile_count:
+		var launch_delay := float(index) * missile_spacing
+		get_tree().create_timer(launch_delay).timeout.connect(func():
+			var direction := (target_pos - origin).normalized()
+			AudioEngine.play_sfx("magicMissileZapSpd", AudioEngine.pan_for_x(attacker["x"]))
+			effects_layer.spawn_projectile_release(origin, direction, Color.WHITE)
+			var arrive := func():
+				effects_layer.play_projectile_impact(target_pos, direction, "magic-missile-spd", Color.WHITE, hit, false)
+				AudioEngine.play_impact("magic-missile-spd", AudioEngine.pan_for_x(target_tile["x"]), hit)
+				if index == missile_count - 1 and not finished:
+					finished = true
+					if on_visual_complete.is_valid(): on_visual_complete.call()
+			effects_layer.spawn_projectile_visual(origin, target_pos, Color.WHITE, missile_duration, arrive, 5.0, "magic-missile-spd", "straight")
+		)
+
+func _show_magic_missile_changes(damages: Array, target_tile: Dictionary, attacker: Dictionary) -> void:
+	if effects_layer == null: return
+	var center := board_view.tile_center(target_tile["x"], target_tile["y"])
+	var target = state.unit_at(target_tile["x"], target_tile["y"])
+	if target != null:
+		var target_token = unit_tokens.get(target.get("name", ""))
+		if target_token != null: center = (target_token as UnitToken).visual_impact_point()
+	var count := maxi(1, damages.size())
+	for index in count:
+		var damage := int(damages[index]) if index < damages.size() else 0
+		var delay := 0.34 + float(index) * 0.18
+		effects_layer.spawn_combat_popup(center, str(-damage), "damage", delay, 0)
+		if target != null:
+			var hit_token = unit_tokens.get(target.get("name", ""))
+			if hit_token != null:
+				var attack_origin := board_view.tile_center(attacker["x"], attacker["y"])
+				var hit_timer := get_tree().create_timer(delay)
+				hit_timer.timeout.connect((hit_token as UnitToken).play_weighted_hit_reaction.bind(attack_origin, false))
+
 func _play_warrior_melee_impact(attacker: Dictionary, target_tile: Dictionary, to_pos: Vector2, item: Dictionary, critical: bool, on_visual_complete: Callable) -> void:
 	if effects_layer == null: return
 	var direction := (to_pos - board_view.tile_center(attacker["x"], attacker["y"])).normalized()
@@ -2427,12 +3226,14 @@ func _projectile_duration_for_kind(kind: String) -> float:
 		"fireball": return 1.36
 		"bomb": return 1.20
 		"blade": return 1.10
+		"wind-blade": return 0.30
+		"spit": return 0.40
 		_: return 0.84
 
 func _projectile_travel_duration(kind: String, from: Vector2, to: Vector2) -> float:
 	if kind == "frost-wand-spd":
 		return from.distance_to(to) / EffectsLayer.SPD_FROST_WORLD_SPEED
-	if kind in ["arrow", "huntress-arrow-spd", "fire-arrow"]:
+	if kind in ["arrow", "huntress-arrow-spd", "fire-arrow", "wind-blade"]:
 		# Pedido do usuário: a flecha viajando rápido demais fazia o dano
 		# parecer instantâneo/simultâneo ao disparo em vez de uma fase
 		# separada — dobrado o tempo de voo pra ficar legível.
@@ -2443,7 +3244,7 @@ func _projectile_travel_duration(kind: String, from: Vector2, to: Vector2) -> fl
 ## Tempo de leitura antes do release. Começa pelo Arqueiro sem mudar os
 ## tempos das armas já existentes; novas unidades podem adotar a mesma base.
 func _ranged_release_delay(attacker: Dictionary, projectile_kind: String) -> float:
-	if attacker.get("spriteKey", "") == "arqueiro" and projectile_kind in ["arrow", "huntress-arrow-spd", "fire-arrow", "frost-wand-spd"]:
+	if attacker.get("spriteKey", "") in ["arqueiro", "samurai"] and projectile_kind in ["arrow", "huntress-arrow-spd", "fire-arrow", "frost-wand-spd"]:
 		return 0.30
 	if attacker.get("spriteKey", "") == "bardo" and projectile_kind == "bolt":
 		return 0.16
@@ -2461,7 +3262,7 @@ func _play_aoe_vfx(u: Dictionary, item: Dictionary, x: int, y: int) -> void:
 	if effects_layer == null:
 		return
 	var mode: String = item.get("targetMode", "")
-	if mode == "cone-poison":
+	if mode == "cone-poison" or item.get("kind", "") == "poison-potion":
 		AudioEngine.play_sfx("toxicGasSpd", AudioEngine.pan_for_x(x))
 	var color := _vfx_color_for_kind(item.get("burstKind", item.get("projectileKind", _default_vfx_kind_for_mode(mode))))
 	var caster_token = unit_tokens.get(u["name"])
@@ -2525,7 +3326,15 @@ func _play_aoe_vfx(u: Dictionary, item: Dictionary, x: int, y: int) -> void:
 		var lightning_target := board_view.tile_center(x, y)
 		effects_layer.play_magic_cast(origin, origin + (lightning_target - origin).normalized() * 22.0 + Vector2(0, -9), {"color": Color("d7f6ff"), "duration": 0.16, "intensity": 1.05, "element": "lightning"})
 		get_tree().create_timer(0.16).timeout.connect(func():
-			effects_layer.spawn_lightning_connection([origin + Vector2(0, -9), lightning_target], Color("d7f6ff"), 1.0)
+			# Varinha de Relâmpago do Shattered Pixel Dungeon: o arco parte
+			# do conjurador e salta pelos alvos/células atingidos, com faíscas
+			# em cada ponto, em vez de ser apenas um raio único até o fim.
+			var lightning_points: Array = [origin + Vector2(0, -9)]
+			for center in centers:
+				lightning_points.append(center)
+			if lightning_points.size() == 1:
+				lightning_points.append(lightning_target)
+			effects_layer.spawn_lightning_connection(lightning_points, Color("d7f6ff"), 1.0)
 			for center in centers: effects_layer.spawn_electric_sparks(center, Color("bdefff"))
 			board_view.shake_camera_at(lightning_target, (lightning_target - origin).normalized(), 0.82, 0.055, false)
 		)
@@ -2585,6 +3394,10 @@ func _play_self_ability_vfx(u: Dictionary, item: Dictionary) -> void:
 	var kind: String = item.get("kind", "generic")
 	var name_lower := String(item.get("name", "")).to_lower()
 	var visual_kind := "nature" if kind in ["regen", "heal"] else kind
+	if kind == "hit-and-run": visual_kind = "goblin-dash"
+	elif kind in ["poison-potion", "sand-in-eyes", "low-blow"]: visual_kind = "poison" if kind == "poison-potion" else "goblin-sand"
+	elif kind == "power-attack" and String(item.get("name", "")) == "Emboscada Goblin": visual_kind = "goblin-ambush"
+	elif kind == "play-dead": visual_kind = "goblin-feign"
 	if kind.begins_with("bard-song-"):
 		visual_kind = "nature" if item.get("songKind", "") == "heal" else "arcane"
 		AudioEngine.play_sfx(item.get("sfx", "arcane"), AudioEngine.pan_for_x(int(u["x"])))
@@ -2592,8 +3405,22 @@ func _play_self_ability_vfx(u: Dictionary, item: Dictionary) -> void:
 	elif "invis" in name_lower: visual_kind = "arcane"
 	elif "defender" in name_lower or "evasiva" in name_lower: visual_kind = "frost"
 	elif "fúria" in name_lower or "berserk" in name_lower: visual_kind = "fire"
+	# Samurai: concentração de energia (Meditar), postura defensiva (Garça) e
+	# saque rápido da lâmina — só apresentação, sobre o mesmo cast_cue de sempre.
+	if kind == "monk-meditate": visual_kind = "nature"
+	elif kind in ["heron-stance", "quick-draw"]: visual_kind = "wind"
 	var center := board_view.tile_center(u["x"], u["y"])
 	var color := _vfx_color_for_kind(visual_kind)
+	if kind == "monk-meditate":
+		effects_layer.spawn_regen_cue(center, color)
+		effects_layer.spawn_temporary_light(center, color, 0.6, 0.7, 70.0)
+		if token != null: (token as UnitToken).play_magic_body_light("heal", 0.9, 0.7)
+	elif kind == "heron-stance":
+		effects_layer.spawn_shockwave(center, Color(0.86, 0.96, 1.0), 60.0, 0.36)
+		effects_layer.spawn_ground_crack(center, Color(0.86, 0.96, 1.0))
+	elif kind == "quick-draw":
+		effects_layer.spawn_slash(center + Vector2(16, -12), Color(0.92, 0.98, 1.0), "slash")
+		effects_layer.spawn_gust(center, Color(0.85, 0.95, 1.0))
 	effects_layer.spawn_cast_cue(center, color, visual_kind)
 	# ETAPA 16 — Signature Ability do Ladino (Golpe Debilitante) e do Bardo
 	# (Canção da Inspiração): mesmo cast_cue/burst de sempre, só com o burst
@@ -2662,6 +3489,9 @@ func _default_vfx_kind_for_mode(mode: String) -> String:
 ## burstKind/projectile/swing) — só cosmético, sem relação com nenhuma regra.
 func _vfx_color_for_kind(kind: String) -> Color:
 	match kind:
+		"goblin-dash": return Color(0.45, 0.95, 0.35)
+		"goblin-ambush": return Color(0.85, 0.25, 0.18)
+		"goblin-feign": return Color(0.55, 0.48, 0.38)
 		"fireball", "fire", "bomb":
 			return Color(1.0, 0.45, 0.15)
 		"sound", "soundwave":
@@ -2672,6 +3502,9 @@ func _vfx_color_for_kind(kind: String) -> Color:
 			return Color(1.0, 0.95, 0.3)
 		"poison":
 			return Color(0.45, 0.85, 0.35)
+		"goblin-poison-potion": return Color(0.35, 0.9, 0.25)
+		"goblin-sand": return Color(0.82, 0.68, 0.32)
+		"goblin-barrel": return Color(0.58, 0.34, 0.16)
 		"nature":
 			return Color(0.5, 0.9, 0.5)
 		"wind":
@@ -2682,6 +3515,10 @@ func _vfx_color_for_kind(kind: String) -> Color:
 			return Color(0.55, 0.34, 0.16)
 		"arcane", "missile", "spark", "magic-missile-spd":
 			return Color(0.75, 0.5, 1.0)
+		"wind-blade":
+			return Color(0.66, 0.9, 1.0)
+		"spit":
+			return Color(0.86, 0.95, 0.55)
 		"arrow", "bolt", "huntress-arrow-spd":
 			return Color(0.6, 0.45, 0.25)
 		"fire-arrow", "bullet-explosive":
@@ -2705,6 +3542,61 @@ func _vfx_color_for_kind(kind: String) -> Color:
 ## tabela que onTileClick usava no JS original pra decidir qual cast*
 ## chamar, só que sem o preview de 2 cliques (aqui já resolve no clique).
 func _resolve_spell(u: Dictionary, item: Dictionary, x: int, y: int) -> void:
+	if _online_mode:
+		var action_name := "dismount" if String(item.get("targetMode", "")) == "dismount" else "spell"
+		OnlineEndpoint.send_action({"action": action_name, "actor": u["name"], "x": x, "y": y, "item": item})
+		_close_confirm_panel()
+		mode = "idle"
+		return
+	if _waiting_for_projectile_turn_end: return
+	var tm: String = item.get("targetMode", "")
+	if not AOE_CONFIRM_MODES.has(tm) and tm != "self-attack" and not String(item.get("kind", "")).begins_with("bard-song"):
+		_apply_spell(u, item, x, y)
+		return
+	if state.turn_owner(u).get("hasActed", false) or u.get("mp", 0) < item.get("mpCost", 0): return
+	var tiles = state.arrow_rain_tiles(u, item, {"x":x, "y":y}) if tm == "arrow-rain" else state.compute_aoe_area_tiles(u, item, {"x":x, "y":y})
+	if tiles == null: tiles = []
+	var centers: Array = []
+	for tile in tiles: centers.append(board_view.tile_center(tile["x"], tile["y"]))
+	var target := board_view.tile_center(x, y)
+	if tm == "point-aoe" and not item.get("ignoresUnitObstruction", false):
+		var obstructed: Dictionary = state.resolve_obstructed_target(u, {"x":x, "y":y})
+		target = board_view.tile_center(obstructed["x"], obstructed["y"])
+	_area_sequence_active = true
+	_waiting_for_projectile_turn_end = true
+	mode = "area_sequence"
+	_close_action_menu()
+	_clear_aoe_preview()
+	var run_id := _ai_sequence_id
+	var origin := board_view.tile_center(u["x"], u["y"])
+	var token = unit_tokens.get(u["name"])
+	if token != null:
+		if tm == "arrow-rain": (token as UnitToken).play_weighted_attack(origin + Vector2(0, -120), true)
+		elif tm == "self-attack": (token as UnitToken).play_warrior_skill_visual(item, target)
+		elif tm == "crescent-arc": (token as UnitToken).play_attack(UnitToken.ATTACK_ACTION_DURATION, "attack")
+		else: (token as UnitToken).play_cast()
+	var sequence := effects_layer.spawn_area_sequence(item, centers, origin, target, BoardView.TILE_SIZE, u.get("burnNextAttackAlwaysTurns", 0) > 0)
+	sequence.impact.connect(func():
+		if run_id != _ai_sequence_id or not _area_sequence_active: return
+		AudioEngine.play_sfx(item.get("sfx", "arcane"), AudioEngine.pan_for_x(x))
+		if sequence.element in ["fire", "physical", "lightning"]:
+			board_view.shake_camera_at(target, (target - origin).normalized(), 1.4, 0.12, false)
+		_apply_spell(u, item, x, y)
+	)
+	sequence.completed.connect(func():
+		if run_id != _ai_sequence_id: return
+		_area_sequence_active = false
+		_waiting_for_projectile_turn_end = false
+		_after_action()
+	)
+	sequence.tree_exiting.connect(func():
+		if run_id == _ai_sequence_id and _area_sequence_active:
+			_area_sequence_active = false
+			_waiting_for_projectile_turn_end = false
+			_after_action()
+	)
+
+func _apply_spell(u: Dictionary, item: Dictionary, x: int, y: int) -> void:
 	board_view.fade_action_feedback()
 	var signature_profile := SignatureVisualProfiles.for_item(u, item)
 	if combat_feedback != null:
@@ -2716,19 +3608,30 @@ func _resolve_spell(u: Dictionary, item: Dictionary, x: int, y: int) -> void:
 	# Projeto-piloto dedicado: somente a Bola de Fogo do Mago usa a nova
 	# sequência assíncrona. Explosão Sonora e Bomba continuam exatamente no
 	# resolvedor point-aoe anterior.
-	if _is_mage_fireball(item):
+	if _is_mage_fireball(item) and not _area_sequence_active:
 		_resolve_mage_fireball(u, item, x, y)
 		return
 	var combat_before := _capture_combat_snapshot()
 	var log_start := state.event_log.size()
 	var tm: String = item.get("targetMode", "")
-	if tm != "enemy":
+	# Chute do Dragão tem sequência própria (voadora + chute, ver o case
+	# "dragon-kick" abaixo) — não usa a pose genérica de conjuração.
+	if tm != "enemy" and tm != "dragon-kick":
 		var caster_token = unit_tokens.get(u["name"])
 		if caster_token != null:
 			(caster_token as UnitToken).play_cast()
-	if AOE_CONFIRM_MODES.has(tm):
+	if AOE_CONFIRM_MODES.has(tm) and not _area_sequence_active:
 		_play_aoe_vfx(u, item, x, y)
+	var kick_flight := 0.0
 	match tm:
+		"arrow-rain":
+			state.cast_arrow_rain(u, item, {"x":x, "y":y})
+		"self":
+			state.cast_self_ability(u, item)
+		"self-attack":
+			state.cast_growth_attack(u, item)
+		"cone-fire":
+			state.cast_fire_cone(u, item, state.compute_aoe_area_tiles(u, item, {"x":x, "y":y}))
 		"resurrect":
 			var target = state.dead_unit_at(x, y)
 			if target != null and target["team"] == u["team"]:
@@ -2745,6 +3648,11 @@ func _resolve_spell(u: Dictionary, item: Dictionary, x: int, y: int) -> void:
 				var supply_kind := "nature" if "Cura" in String(item.get("name", "")) else "arcane"
 				_play_target_spell_vfx(u, target, item, supply_kind)
 				state.cast_supply_item(u, target, item)
+		"reincarnation":
+			var target = state.unit_at(x, y)
+			if target != null:
+				_play_target_spell_vfx(u, target, item, "nature")
+				state.cast_reincarnation(u, target, item)
 		"enemy":
 			var target = state.unit_at(x, y)
 			if target != null:
@@ -2831,12 +3739,90 @@ func _resolve_spell(u: Dictionary, item: Dictionary, x: int, y: int) -> void:
 			var target = state.unit_at(x, y)
 			if target != null:
 				state.cast_charge(u, target, item)
+		"slime-jump":
+			state.cast_slime_jump(u, item, {"x": x, "y": y})
+		"dismount":
+			state.dismount_unit(u, {"x": x, "y": y})
+		"dust-square":
+			state.cast_dust_cloud(u, item)
+		"heal-cross":
+			state.cast_vestruz_heal(u, item)
+		"vestruz-dash":
+			var dash_from := board_view.tile_center(u["x"], u["y"])
+			if state.cast_vestruz_dash(u, item, {"x": x, "y": y}) and effects_layer != null:
+				var dash_to := board_view.tile_center(u["x"], u["y"])
+				effects_layer.spawn_beam(dash_from, dash_to, Color(0.86, 0.72, 0.46), "beam", 0.4)
+				effects_layer.spawn_burst(dash_from, BoardView.TILE_SIZE * 0.42, Color(0.82, 0.68, 0.44), 0.32, "physical")
+				effects_layer.spawn_cloud(dash_to, Color(0.8, 0.66, 0.42))
+				AudioEngine.play_sfx("whoosh", AudioEngine.pan_for_x(int(u["x"])))
+		"iaijutsu":
+			var iai_target = state.unit_at(x, y)
+			if iai_target != null:
+				var iai_origin := board_view.tile_center(u["x"], u["y"])
+				if state.cast_iaijutsu(u, iai_target, item):
+					_play_iaijutsu_vfx(u, iai_target, iai_origin)
+		"crescent-arc":
+			state.cast_crescent_slash(u, item, {"x": x, "y": y})
+		"dragon-kick":
+			# Voadora enquanto sobe/voa até o ponto escolhido e, logo depois
+			# que o token pousa, a sequência de chute (ver "spriteAction" da
+			# habilidade em data/spells.gd).
+			var kick_token = unit_tokens.get(u["name"])
+			if state.cast_dragon_kick(u, item, {"x": x, "y": y}) and kick_token != null:
+				# Voo lento (DRAGON_KICK_FLIGHT_SECONDS) com a arte da voadora até o
+				# ponto de pouso; o chute e o impacto só acontecem na chegada.
+				kick_flight = DRAGON_KICK_FLIGHT_SECONDS
+				var kick_strike := board_view.tile_center(x, y)
+				(kick_token as UnitToken).play_flight(board_view.tile_center(u["x"], u["y"]), kick_flight)
+				var kick_timer := get_tree().create_timer(kick_flight)
+				kick_timer.timeout.connect(func():
+					if not is_instance_valid(kick_token): return
+					(kick_token as UnitToken).play_attack(0.34, String(item.get("spriteAction", "attack")))
+					if effects_layer != null and is_instance_valid(effects_layer):
+						effects_layer.spawn_slash(kick_strike, Color(1.0, 0.6, 0.25), "blunt")
+						effects_layer.spawn_burst(kick_strike, BoardView.TILE_SIZE * 0.4, Color(1.0, 0.85, 0.5), 0.25, "physical")
+						board_view.shake_camera_at(kick_strike, Vector2.RIGHT, 1.6, 0.16, true)
+						AudioEngine.play_event("strong_hit", AudioEngine.pan_for_x(x))
+				)
 		_:
 			pass
-	var result_delay := _projectile_duration_for_kind(item.get("projectileKind", "fireball")) if tm == "point-aoe" else (0.58 if tm == "freeze-aoe" else (0.16 if tm == "line-aoe" else 0.18))
+	var result_delay := 0.0 if _area_sequence_active else _projectile_duration_for_kind(item.get("projectileKind", "fireball")) if tm == "point-aoe" else (0.58 if tm == "freeze-aoe" else (0.16 if tm == "line-aoe" else 0.18))
+	if kick_flight > 0.0: result_delay = kick_flight + 0.1
 	_show_combat_changes(combat_before, log_start, result_delay, null, u, null, "ice" if tm == "freeze-aoe" else ("lightning" if tm == "line-aoe" else ""))
 	mode = "idle"
+	if kick_flight > 0.0:
+		# Segura o fim do turno até o Monge pousar e chutar (o estado do jogo já
+		# foi resolvido; só a apresentação leva ~2 s).
+		_waiting_for_projectile_turn_end = true
+		var kick_end := get_tree().create_timer(kick_flight + 0.45)
+		kick_end.timeout.connect(func():
+			_waiting_for_projectile_turn_end = false
+			_after_action()
+		)
+		return
 	_after_action()
+
+## Corte Iaijutsu: rastro de vento do ponto de partida até onde o Samurai
+## parou e, logo depois que o token chega, o corte (pose de ataque + arco de
+## energia + impacto) no alvo. Só apresentação.
+func _play_iaijutsu_vfx(u: Dictionary, target: Dictionary, origin: Vector2) -> void:
+	if effects_layer == null: return
+	var color := Color(0.75, 0.93, 1.0)
+	var landing := board_view.tile_center(u["x"], u["y"])
+	if origin.distance_to(landing) > 1.0:
+		effects_layer.spawn_beam(origin, landing, color, "beam", 0.26)
+		effects_layer.spawn_burst(origin, BoardView.TILE_SIZE * 0.32, color, 0.22, "wind")
+	AudioEngine.play_sfx("whoosh", AudioEngine.pan_for_x(int(u["x"])))
+	var strike_pos := board_view.tile_center(target["x"], target["y"])
+	var token = unit_tokens.get(u["name"])
+	var strike_timer := get_tree().create_timer(0.30)
+	strike_timer.timeout.connect(func():
+		if effects_layer == null or not is_instance_valid(effects_layer): return
+		if token != null and is_instance_valid(token): (token as UnitToken).play_attack(UnitToken.ATTACK_ACTION_DURATION, "attack")
+		effects_layer.spawn_slash(strike_pos, color, "slash")
+		effects_layer.spawn_burst(strike_pos, BoardView.TILE_SIZE * 0.3, Color(1.0, 0.94, 0.7), 0.2, "physical")
+		board_view.shake_camera_at(strike_pos, (strike_pos - landing).normalized(), 0.9, 0.12, false)
+	)
 
 func _is_mage_fireball(item: Dictionary) -> bool:
 	return item.get("targetMode", "") == "point-aoe" and String(item.get("name", "")) == "Bola de Fogo"
@@ -2978,6 +3964,16 @@ func _show_combat_changes(before: Dictionary, log_start: int, delay: float = 0.0
 			AudioEngine.play_event("parry", AudioEngine.pan_for_x(unit["x"]))
 			stack += 1
 			showed_any = true
+		elif "esquiva do ataque de" in recent_log.to_lower() and unit["name"].to_lower() in recent_log.to_lower():
+			effects_layer.spawn_combat_popup(center, "ESQUIVA!", "buff", unit_delay, stack)
+			AudioEngine.play_event("wind", AudioEngine.pan_for_x(unit["x"]))
+			stack += 1
+			showed_any = true
+		elif "está em foco e bloqueia" in recent_log.to_lower() and unit["name"].to_lower() in recent_log.to_lower():
+			effects_layer.spawn_combat_popup(center, "FOCO", "block", unit_delay, stack)
+			AudioEngine.play_event("parry", AudioEngine.pan_for_x(unit["x"]))
+			stack += 1
+			showed_any = true
 		var old_effects: Array = old["effects"]
 		for effect in unit.get("statusEffects", []):
 			var type := String(effect.get("type", ""))
@@ -3029,6 +4025,10 @@ func _status_popup_name(type: String) -> String:
 		"slowed": return "LENTIDÃO!"
 		"regen", "regenBoost": return "REGENERAÇÃO!"
 		"guarding": return "DEFENDENDO!"
+		"focus": return "FOCO!"
+		"heronStance": return "POSTURA DA GARÇA!"
+		"guardBroken": return "GUARDA QUEBRADA!"
+		"dustBlind": return "POEIRA NOS OLHOS!"
 		"invisible": return "INVISÍVEL!"
 		"fury": return "FÚRIA!"
 		_: return type.to_upper() + "!"
@@ -3042,22 +4042,23 @@ func _status_popup_kind(type: String) -> String:
 		"bleed": return "bleed"
 		"root": return "root"
 		"slowed": return "ice"
-		"guarding": return "block"
+		"guarding", "focus": return "block"
 		"regen", "regenBoost": return "regen"
-		"fury", "invisible", "evasive", "swiftFeet": return "buff"
+		"fury", "invisible", "evasive", "swiftFeet", "heronStance": return "buff"
 		_: return "status"
 
 func _status_sfx_event(type: String) -> String:
 	match type:
-		"paralyzed", "dazed", "blinded", "weakened", "slowed": return "debuff"
+		"paralyzed", "dazed", "blinded", "weakened", "slowed", "guardBroken", "dustBlind": return "debuff"
 		"root": return "nature"
-		"guarding": return "parry"
+		"guarding", "focus": return "parry"
 		"regen", "regenBoost": return "heal"
 		"fury": return "charge"
-		"invisible", "evasive": return "wind"
+		"invisible", "evasive", "heronStance": return "wind"
 		_: return ""
 
 func _on_end_turn_pressed() -> void:
+	if _waiting_for_projectile_turn_end or _ai_sequence_running: return
 	if state.battle_ended or state.current_actor == null or not _team_is_human(state.current_actor["team"]):
 		return
 	_close_action_menu()
@@ -3067,6 +4068,7 @@ func _on_end_turn_pressed() -> void:
 	_request_end_current_turn()
 
 func _request_end_current_turn() -> void:
+	if _waiting_for_projectile_turn_end or _ai_sequence_running: return
 	if state.current_actor == null: return
 	_end_current_turn()
 
@@ -3080,6 +4082,9 @@ func _on_music_mute_pressed() -> void:
 ## morreu), encerra o turno sozinho — mesma regra de checkEndCurrentTurn no
 ## JS original. Senão, só recalcula o que ainda pode ser feito.
 func _after_action() -> void:
+	if _area_sequence_active:
+		_sync_visuals()
+		return
 	mode = "idle"
 	_clear_aoe_preview()
 	if state.check_battle_outcome():
@@ -3149,8 +4154,23 @@ func _run_ai_until_player_turn() -> void:
 			await _wait_for_ai_presentation(AI_ATTACK_PAUSE)
 			if run_id != _ai_sequence_id:
 				return
-			_play_recorded_enemy_action_vfx(action_vfx, acting_token)
-		_show_combat_changes(combat_before, log_start, 0.18)
+			if action_vfx.has("tiles"):
+				var centers: Array = []
+				for tile in action_vfx["tiles"]: centers.append(board_view.tile_center(tile["x"], tile["y"]))
+				var visual_item: Dictionary = action_vfx.get("item", {})
+				var target_tile: Dictionary = action_vfx.get("target", acting_unit)
+				var sequence := effects_layer.spawn_area_sequence(visual_item, centers, board_view.tile_center(acting_unit["x"], acting_unit["y"]), board_view.tile_center(target_tile["x"], target_tile["y"]), BoardView.TILE_SIZE, action_vfx.get("rainFire", false))
+				if acting_token != null: acting_token.play_cast()
+				await _wait_for_ai_presentation(sequence.impact_time)
+				if run_id != _ai_sequence_id: return
+				AudioEngine.play_sfx(visual_item.get("sfx", "arcane"), AudioEngine.pan_for_x(acting_unit["x"]))
+				_show_combat_changes(combat_before, log_start, 0.0)
+				_sync_visuals()
+				await _wait_for_ai_presentation(sequence.duration - sequence.impact_time)
+				if run_id != _ai_sequence_id: return
+			else:
+				_play_recorded_enemy_action_vfx(action_vfx, acting_token)
+		if not action_vfx.has("tiles"): _show_combat_changes(combat_before, log_start, 0.18)
 		# ETAPA 17 — reação curta e limitada de aliados vivos e próximos a
 		# quem morreu nesta ação (regra: nunca todos ao mesmo tempo, ver
 		# EnemyVisualBehaviorController.on_ally_died). Detecta só comparando
@@ -3217,6 +4237,68 @@ func _play_recorded_enemy_fire_vfx(event: Dictionary) -> void:
 		effects_layer.spawn_fireblast_area(centers, origin)
 	AudioEngine.play_sfx("fire", AudioEngine.pan_for_x(int(caster["x"])))
 
+## DESFILADEIRO — apresentação do vento gelado (GameState.
+## maybe_trigger_desfiladeiro_wind já aplicou dano/status de forma síncrona;
+## isto é só o "momento" visual pedido pelo usuário: pedido explícito pra
+## ficar mais lento e mais claro (~5s de pausa cinemática em vez dos 3s de
+## antes, reaproveitando BattlePresentationController.present_event — mesmo
+## popup com letterbox já usado por reforços/eventos de campanha), mais um
+## tremor de câmera curto (mesmo shake_camera já usado em impactos) e um
+## overlay de gelo/vento na tela inteira (_play_icy_wind_screen_effect) pra
+## deixar claro o que está acontecendo. Chamada sem `await` pelo call site
+## (_sync_visuals), então nunca bloqueia turn order/CT/AI.
+const DESFILADEIRO_WIND_EVENT_HOLD := 5.0
+
+func _present_icy_wind_event(event: Dictionary) -> void:
+	if battle_presentation == null:
+		return
+	var hit_count: int = (event.get("hit", []) as Array).size()
+	var text := ("Uma rajada congelante varre o desfiladeiro — %d unidade(s) atingida(s)!" % hit_count) if hit_count > 0 else "Uma rajada congelante varre o desfiladeiro, mas ninguém é atingido."
+	if board_view != null:
+		board_view.shake_camera(Vector2.RIGHT, 0.6, 0.35, false)
+	_play_icy_wind_screen_effect(DESFILADEIRO_WIND_EVENT_HOLD)
+	await battle_presentation.present_event("VENTO GELADO", text, [], true, DESFILADEIRO_WIND_EVENT_HOLD)
+
+## Overlay de tela inteira (tingimento azulado + rajadas diagonais brancas
+## cruzando a tela) — CanvasLayer temporário próprio, abaixo do letterbox/
+## card de texto (layer 80 em battle_presentation_controller.gd) pra não
+## tapar a mensagem. Só visual, não lê nem altera nenhum estado de jogo;
+## se autodestrói (`queue_free`) ao fim do fade-out.
+func _play_icy_wind_screen_effect(duration: float) -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 75
+	add_child(layer)
+	var tint := ColorRect.new()
+	tint.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	tint.color = Color(0.68, 0.86, 1.0, 0.0)
+	tint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(tint)
+	var viewport_size: Vector2 = get_viewport().get_visible_rect().size
+	var streaks: Array[ColorRect] = []
+	for i in 5:
+		var streak := ColorRect.new()
+		streak.color = Color(1, 1, 1, 0.0)
+		streak.size = Vector2(220.0 + randf() * 80.0, 3.0)
+		streak.rotation = deg_to_rad(-16)
+		streak.position = Vector2(-260.0, randf() * viewport_size.y)
+		streak.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		layer.add_child(streak)
+		streaks.append(streak)
+	var tween := create_tween()
+	tween.tween_property(tint, "color:a", 0.14, 0.6)
+	for i in streaks.size():
+		var streak: ColorRect = streaks[i]
+		var streak_tween := create_tween()
+		streak_tween.tween_property(streak, "color:a", 0.5, 0.2).set_delay(i * 0.15)
+		streak_tween.tween_property(streak, "position:x", viewport_size.x + 260.0, duration - 0.3).set_trans(Tween.TRANS_LINEAR)
+	await get_tree().create_timer(maxf(duration - 0.5, 0.0)).timeout
+	var fade_out := create_tween()
+	fade_out.tween_property(tint, "color:a", 0.0, 0.5)
+	for streak in streaks:
+		fade_out.parallel().tween_property(streak, "color:a", 0.0, 0.5)
+	await fade_out.finished
+	layer.queue_free()
+
 func _wait_for_ai_presentation(seconds: float) -> void:
 	# Testes headless continuam instantâneos; na janela do jogo a pausa deixa
 	# cada turno inimigo, seus popups e mudanças no tabuleiro observáveis.
@@ -3248,6 +4330,10 @@ func _compute_current_targets() -> void:
 		return
 	if not u.get("hasMoved", false) and not state.is_rooted(u):
 		reachable_tiles = state.compute_reachable(u)
+		# Montar = mover para o quadrado da Vestruz adjacente: ele aparece como
+		# destino de movimento e o clique pede confirmação (ver _handle_tile_click).
+		for mount_candidate in state.mount_candidates(u):
+			reachable_tiles.append({"x": mount_candidate["x"], "y": mount_candidate["y"]})
 	if not u.get("hasActed", false):
 		for o in state.opposing_team_of(u):
 			if o["hp"] <= 0:
@@ -3305,6 +4391,16 @@ func _sync_visuals() -> void:
 				(failed_token as UnitToken).spawn_bard_song_failure(event.get("songKind", ""))
 				var failed_unit: Dictionary = (failed_token as UnitToken).unit
 				effects_layer.spawn_combat_popup(board_view.tile_center(failed_unit["x"], failed_unit["y"]), "FALHOU", "miss", 0.0, 1)
+	# DESFILADEIRO — vento gelado (ver GameState.maybe_trigger_desfiladeiro_
+	# wind): mesmo padrão de fila de eventos "puramente visual" já usado
+	# acima por bone_explosion_events/bard_song_vfx_events. Os efeitos
+	# (dano/status) já foram aplicados de forma síncrona por GameState — aqui
+	# só entra a apresentação (pausa/rajada), sem afetar turn order/CT/AI.
+	if not state.desfiladeiro_wind_events.is_empty():
+		var wind_events: Array = state.desfiladeiro_wind_events.duplicate(true)
+		state.desfiladeiro_wind_events.clear()
+		for event in wind_events:
+			_present_icy_wind_event(event)
 	board_view.set_highlights(reachable_tiles, attackable_units, spell_tiles, aoe_preview_tiles, attack_range_tiles)
 	if combat_feedback != null:
 		if not aoe_preview_tiles.is_empty():
@@ -3412,6 +4508,12 @@ func _describe_aoe_outcome(u: Dictionary, item: Dictionary, x: int, y: int) -> A
 		lines.append("Linha reta fixa de %d quadrado(s) (perfura todo mundo no caminho)" % item.get("maxRange", 0))
 	elif mode == "trap":
 		lines.append("Área de raio %d — fica invisível até um inimigo passar por ela" % item.get("areaRadius", 0))
+	elif mode == "crescent-arc":
+		lines.append("Arco de %d quadrado(s) à frente — atinge só inimigos (até 3)" % area_tiles.size())
+	elif mode == "dust-square":
+		lines.append("Poeira em área 3x3 (%d quadrados) ao redor de %s — só inimigos" % [area_tiles.size(), u["name"]])
+	elif mode == "heal-cross":
+		lines.append("Cura em cruz (%d quadrados: o dela + 4 cardeais, sem diagonais) — só aliados" % area_tiles.size())
 
 	if mode == "trap":
 		var blockers: Array = []
@@ -3431,8 +4533,11 @@ func _describe_aoe_outcome(u: Dictionary, item: Dictionary, x: int, y: int) -> A
 	var targets: Array = []
 	for t in area_tiles:
 		var target_unit = state.unit_at(t["x"], t["y"])
-		if target_unit != null:
+		if target_unit != null and not ((mode == "crescent-arc" or mode == "dust-square") and target_unit["team"] == u["team"]) and not (mode == "heal-cross" and target_unit["team"] != u["team"]):
 			targets.append(target_unit)
+	if mode == "heal-cross" and u.get("riderName", "") != "":
+		var carried_rider = state.rider_of(u)
+		if carried_rider != null and not targets.has(carried_rider): targets.append(carried_rider)
 	if targets.is_empty():
 		lines.append("Nenhum alvo dentro da área.")
 		return lines
@@ -3446,6 +4551,10 @@ func _describe_aoe_outcome(u: Dictionary, item: Dictionary, x: int, y: int) -> A
 		elif mode == "regen-aoe":
 			var regen_pct: int = roundi(float(item.get("hitChance", 0.0)) * 100.0)
 			lines.append("%s (%s): %d%% de chance — se acertar, regenera %d-%d de vida por turno, por %d turno(s)" % [target_unit["name"], team_note, regen_pct, item.get("healMin", 0), item.get("healMax", 0), item.get("regenTurns", 0)])
+		elif mode == "heal-cross":
+			lines.append("%s (aliado): cura %d-%d de vida" % [target_unit["name"], item.get("healMin", 0), item.get("healMax", 0)])
+		elif mode == "dust-square":
+			lines.append("%s (inimigo): -%d pontos percentuais de acerto por 1 turno" % [target_unit["name"], roundi(float(item.get("accuracyDown", 0.2)) * 100.0)])
 		elif mode == "mana-aoe":
 			if target_unit.has("maxMp"):
 				lines.append("%s (%s): restaura %d-%d de mana" % [target_unit["name"], team_note, item.get("manaMin", 0), item.get("manaMax", 0)])
@@ -3490,8 +4599,11 @@ func _refresh_hud() -> void:
 					_status_label.text = "🎵 %s canta %s (%d aplicação(ões) futura(s)); pode mover ou trocar de música, mas a Besta está bloqueada." % [u["name"], song["item"]["name"], song["applicationsLeft"]]
 				else:
 					_status_label.text = "Vez de %s — clique nela pra ver ações, tile azul move, vermelho ataca." % u["name"]
+					var hud_mount = state.mount_of(u)
+					if hud_mount != null:
+						_status_label.text += "  🐦 %s: HP %d/%d  MP %d/%d" % [hud_mount["name"], hud_mount["hp"], hud_mount["maxHp"], hud_mount["mp"], hud_mount["maxMp"]]
 		else:
-			_status_label.text = "Vez de %s (IA)..." % u["name"]
+			_status_label.text = ("Aguardando o adversário: vez de %s…" % u["name"]) if _online_mode else ("Vez de %s (IA)..." % u["name"])
 		_end_turn_button.disabled = not _team_is_human(u["team"])
 	var log_size: int = state.event_log.size()
 	var start: int = maxi(0, log_size - 10)
@@ -3527,6 +4639,9 @@ func _show_end_screen() -> void:
 func _show_defeat_screen_now() -> void:
 	_end_screen_title.text = "VOCÊ PERDEU!"
 	_end_screen_title.add_theme_color_override("font_color", Color(0.95, 0.35, 0.35))
+	# A apresentação de resultado esmaece TODA a HUD (20%) e este painel mora
+	# na HUD: sem restaurar, o popup de opções aparecia transparente. Sólido.
+	_end_screen.modulate = Color.WHITE
 	_end_screen.visible = true
 	AudioEngine.play_sfx("defeat")
 

@@ -1,0 +1,22 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/characters/warrior_v3/rigged/Warrior_V3_RIGGED.glb" id="1_model"]
+
+[sub_resource type="Animation" id="Animation_idle_empty"]
+resource_name = "Idle"
+length = 0.5
+loop_mode = 1
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_v3"]
+_data = {
+"Idle": SubResource("Animation_idle_empty")
+}
+
+[node name="WarriorV3Visual" type="Node3D"]
+
+[node name="Model" parent="." instance=ExtResource("1_model")]
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+libraries = {
+"": SubResource("AnimationLibrary_v3")
+}

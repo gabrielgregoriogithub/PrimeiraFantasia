@@ -38,6 +38,8 @@ const BIOMES := {
 	"forest": {"ambient_tint":Color(0.06,0.22,0.16,0.065),"environment_tint":Color("dcebd9"),"shadow_tint":Color("263b42"),"water_tint":Color("58aeb9"),"background_saturation":0.88,"ambient_particles":"leaves","ambient_light":0.93},
 	"lua_valley": {"ambient_tint":Color(0.08,0.18,0.24,0.055),"environment_tint":Color("dcecf0"),"shadow_tint":Color("27344d"),"water_tint":Color("55afc7"),"background_saturation":0.90,"ambient_particles":"mist","ambient_light":0.94},
 	"tower": {"ambient_tint":Color(0.11,0.12,0.20,0.075),"environment_tint":Color("dfe3eb"),"shadow_tint":Color("2d2945"),"water_tint":Color("598da5"),"background_saturation":0.84,"ambient_particles":"dust","ambient_light":0.88},
+	"cemiterio": {"ambient_tint":Color(0.05,0.10,0.16,0.10),"environment_tint":Color("e4ecea"),"shadow_tint":Color("1c2733"),"water_tint":Color("4f8fa6"),"background_saturation":0.85,"ambient_particles":"mist","ambient_light":0.86},
+	"templo": {"ambient_tint":Color(0.05,0.14,0.15,0.075),"environment_tint":Color("e6efe6"),"shadow_tint":Color("22303a"),"water_tint":Color("58aeb9"),"background_saturation":0.88,"ambient_particles":"leaves","ambient_light":0.9},
 	"volcanic": {"ambient_tint":Color(0.38,0.09,0.025,0.065),"environment_tint":Color("f0d8c4"),"shadow_tint":Color("3e2636"),"water_tint":Color("577e91"),"background_saturation":0.87,"ambient_particles":"embers","ambient_light":0.90},
 }
 

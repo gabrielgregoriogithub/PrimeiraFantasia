@@ -59,6 +59,16 @@ static func key_for_unit(unit: Dictionary) -> String:
 		"arqueiro": return "archer"
 		"mago": return "mage"
 		"quimico": return "chemist"
+		# Monge: lutador leve e rápido — reaproveita o perfil do Ladino
+		# ("rogue": pouca antecipação, recuperação curta, passo leve) em vez
+		# de inventar um perfil só pra ele. É 100% cosmético.
+		"monge": return "rogue"
+		# Samurai: espadachim de armadura pesada — mesmo perfil do Guerreiro
+		# ("warrior": golpe com peso, passo firme). 100% cosmético.
+		"samurai": return "warrior"
+		# Vestruz: ave veloz e voadora — mesmo perfil leve da Fada/Ladino
+		# (sem peso no passo). Cosmético.
+		"vestruz": return "rogue"
 		"bardo": return "bard"
 		"fada", "fantasma", "fogo_vivo", "tower_ghost", "tower_living_fire": return "fairy"
 		"goblin", "spd_rat", "spd_snake", "spd_slime": return "small_enemy"

@@ -1,0 +1,54 @@
+{
+    "expected_credits":  10,
+    "balance_before":  {
+                           "balance":  705.00,
+                           "frozen":  0.00
+                       },
+    "task_id":  "4d7a446b-a7cc-4c43-815c-a3d7f5ec1615",
+    "source_rig_model":  "v1.0-20240301",
+    "status":  "submitted",
+    "parameters":  {
+                       "bake_animation":  true,
+                       "animate_in_place":  true,
+                       "animations":  [
+                                          "preset:biped:fall"
+                                      ],
+                       "export_with_geometry":  false,
+                       "input":  "2dcc9eeb-9e93-4277-b0d8-8f732a07c6f9",
+                       "out_format":  "glb"
+                   },
+    "endpoint":  "/v3/animations/retarget",
+    "submitted_at":  "2026-09-06T02:10:29.9894921Z",
+    "task":  {
+                 "code":  0,
+                 "status":  "success",
+                 "data":  {
+                              "type":  "animate_retarget",
+                              "status":  "failed",
+                              "progress":  100,
+                              "input":  {
+                                            "animations":  [
+                                                               "preset:biped:fall"
+                                                           ],
+                                            "out_format":  "glb",
+                                            "bake_animation":  true,
+                                            "animate_in_place":  true,
+                                            "original_model_id":  "2dcc9eeb-9e93-4277-b0d8-8f732a07c6f9",
+                                            "export_with_geometry":  false
+                                        },
+                              "output":  {
+
+                                         },
+                              "task_id":  "4d7a446b-a7cc-4c43-815c-a3d7f5ec1615",
+                              "created_at":  "2026-09-06T02:10:30.497551Z",
+                              "completed_at":  "2026-09-06T02:10:40.802318Z",
+                              "error_code":  1004,
+                              "error_message":  "不支持mixamo骨骼的retarget"
+                          }
+             },
+    "queried_at":  "2026-09-06T02:10:56.8866973Z",
+    "balance_after":  {
+                          "balance":  705.00,
+                          "frozen":  0.00
+                      }
+}

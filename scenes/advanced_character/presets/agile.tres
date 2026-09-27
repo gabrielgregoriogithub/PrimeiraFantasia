@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="AnimationProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/advanced_character/animation_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+idle_speed = 1.4
+idle_amplitude = 0.8
+body_bob = 0.8
+head_bob = 1.1
+breathing_strength = 0.8
+movement_weight = 0.6
+anticipation_duration = 0.07
+attack_speed = 1.4
+recovery_duration = 0.10
+recoil_strength = 0.9
+hit_stop_duration = 0.045
+camera_shake_strength = 0.7
+secondary_motion_strength = 0.9

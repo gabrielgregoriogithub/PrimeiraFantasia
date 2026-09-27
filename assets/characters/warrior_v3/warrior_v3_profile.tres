@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="Character3DProfile" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/characters/character_3d_profile.gd" id="1"]
+[ext_resource type="PackedScene" path="res://assets/characters/warrior_v3/Warrior_V3_Visual.tscn" id="2"]
+
+[resource]
+script = ExtResource("1")
+character_id = "warrior_v3"
+archetype = "Humanoid_Melee"
+model = ExtResource("2")
+model_scale = 1.0
+animations = {&"Idle":["Idle"]}
+capabilities = {}
+bone_map = {"root":"Root","hips":"mixamorig:Hips","spine":"mixamorig:Spine","chest":"mixamorig:Spine2","neck":"mixamorig:Neck","head":"mixamorig:Head","hand_r":"mixamorig:RightHand","hand_l":"mixamorig:LeftHand","foot_l":"mixamorig:LeftFoot","foot_r":"mixamorig:RightFoot"}
+socket_map = {}
+weapon = {}
+equipment = {}
+mesh_scale_overrides = {}
+audio_profile = {}

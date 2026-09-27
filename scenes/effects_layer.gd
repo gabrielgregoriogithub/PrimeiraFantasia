@@ -2,6 +2,13 @@ extends Node2D
 class_name EffectsLayer
 
 const VisualPolicy = preload("res://data/visual_policy.gd")
+const AREA_SEQUENCE := preload("res://scenes/area_spell_sequence.gd")
+
+func spawn_area_sequence(item: Dictionary, centers: Array, origin: Vector2, target: Vector2, tile_size: float, flaming := false) -> Node2D:
+	var sequence := AREA_SEQUENCE.new()
+	sequence.configure(item, centers, origin, target, tile_size, flaming)
+	add_child(sequence)
+	return sequence
 
 const FIREBALL_VFX_SCENE := preload("res://scenes/vfx/fireball_vfx.tscn")
 ## Serifada, igual à referência do protótipo Browser (floating-text usa
@@ -80,6 +87,14 @@ class VfxShape extends Node2D:
 				draw_colored_polygon(PackedVector2Array([Vector2(radius + 5, 0), Vector2(radius - 3, -4), Vector2(radius - 3, 4)]), color.lightened(0.25))
 				draw_line(Vector2(-radius, 0), Vector2(-radius + 6, -4), color, 2.0, true)
 				draw_line(Vector2(-radius, 0), Vector2(-radius + 6, 4), color, 2.0, true)
+			"wind-slash":
+				# Corte do Vento (Samurai): meia-lua de energia com miolo claro e
+				# um rastro fino atrás — convexa para a frente (+x = direção do voo).
+				draw_arc(Vector2(-radius * 0.35, 0), radius * 1.15, -1.05, 1.05, 22, Color(color, 0.30), 11.0, true)
+				draw_arc(Vector2(-radius * 0.35, 0), radius * 1.15, -1.05, 1.05, 22, color, 5.0, true)
+				draw_arc(Vector2(-radius * 0.35, 0), radius * 1.05, -0.85, 0.85, 18, Color("f4fcff"), 2.0, true)
+				draw_line(Vector2(-radius * 1.6, -radius * 0.55), Vector2(-radius * 0.6, -radius * 0.25), Color(color, 0.55), 2.0, true)
+				draw_line(Vector2(-radius * 1.6, radius * 0.55), Vector2(-radius * 0.6, radius * 0.25), Color(color, 0.55), 2.0, true)
 			"blade":
 				draw_colored_polygon(PackedVector2Array([Vector2(-radius, -3), Vector2(radius - 4, -4), Vector2(radius + 6, 0), Vector2(radius - 4, 4), Vector2(-radius, 3)]), color)
 				draw_line(Vector2(-radius + 3, -7), Vector2(-radius + 3, 7), Color("8a592f"), 4.0, true)
@@ -352,6 +367,14 @@ func spawn_projectile(from: Vector2, to: Vector2, color: Color, duration: float 
 		"blade":
 			visual_kind = "blade"
 			visual_radius = 18.0
+		"spit":
+			visual_kind = "orb"
+			visual_radius = 8.0
+			color = Color("dff29a")
+		"wind-blade":
+			visual_kind = "wind-slash"
+			visual_radius = 20.0
+			color = Color("a8e6ff")
 		"bullet":
 			visual_kind = "bullet"
 			visual_radius = 10.0

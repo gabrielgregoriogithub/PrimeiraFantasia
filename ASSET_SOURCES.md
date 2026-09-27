@@ -492,6 +492,526 @@ losango preto opaco. Variantes usadas: `Tree_2` (frondosa), `Pine_3`
 (`BoardLayout.TREE_ART_VARIANTS`) — só que com uma lista própria da
 Floresta em `_forest_definition()`, sem alterar nada do Campo.
 
+### Obstáculos novos da Vila: cerca arrombada, barricada, ponte quebrada e casa em ruínas (2026-09-05)
+
+Usuário pediu pra usar assets de "cidades: casas, estradas, terrenos, cercas,
+pontes" dos repositórios `PokemonWorkshop/PokemonStudio`, `grunt-lucas/
+porytiles`, `PokeAPI/sprites` e `nikouu/Pokemon-gen-2-style-tilemap`, com uma
+imagem de referência (vila isométrica estilo Stardew/Sea of Stars) — pra
+reforçar a Vila em chamas/destruída, com os novos elementos funcionando como
+obstáculos de verdade (bloqueando movimento), não só decoração.
+
+Antes de copiar qualquer arquivo, os 4 repositórios foram auditados (`gh`/
+`WebFetch`, sem clone local):
+
+| Repositório | Resultado da auditoria |
+|---|---|
+| `PokeAPI/sprites` | Sprites oficiais de criaturas Pokémon (Nintendo/Game Freak, copyright reservado) — nem o tipo de asset certo (sem casas/estradas/cercas) nem livre pra reuso. |
+| `grunt-lucas/porytiles` | Só uma ferramenta CLI que compila tilesets — não tem nenhum asset gráfico no repositório. |
+| `PokemonWorkshop/PokemonStudio` | Engine/editor de fangames com licença própria vinculada ao uso da IP Pokémon — não é uma licença que permita extrair arte pra outro projeto. |
+| `nikouu/Pokemon-gen-2-style-tilemap` | MIT, arte própria do autor (recriação "legalmente diferente", não extraída do jogo) — mas são tiles GB Style de 8x8 (parede/piso/1 prédio único/path/grama/água), sem cerca nem ponte, e destoaria do estilo isométrico pré-renderizado que a Vila já usa. |
+
+Nenhum dos 4 servia. Conforme decisão do usuário, substituídos por um pack
+CC0 já da mesma família dos demais props da Vila (Kenney, como o
+`fantasyTown_0.1` já presente em `../props/`, fora do projeto Godot):
+
+`Fantasy Town` de Kenney (**CC0 1.0**, `props/fantasyTown_0.1/`,
+`Models/GLTF format/*.glb`). Peças usadas, copiadas pra
+`assets/props/village/source/fantasy_town/` (só o subconjunto usado, mesma
+regra dos demais packs):
+
+| Sprite novo | Peça(s) do kit | Kind | Bloqueia? |
+|---|---|---|---|
+| `village_fence_broken.png` | `fenceBroken.glb` (peça pronta, cerca com tábua solta) | `village-fence-broken` | Sim |
+| `village_barricade.png` | `polesHorizontal.glb` (peça pronta, 2 postes + 2 travessas) | `village-barricade` | Sim |
+| `village_bridge_broken.png` | `planksOpening.glb` (peça pronta, tabuleiro de madeira com buraco no meio) | `village-bridge-broken` | Sim |
+| `village_house_ruin.png` | `wallWoodBroken.glb` + `wallBroken.glb` (2 paredes quebradas, madeira + pedra, montadas formando um V) | `village-house-ruin` (entra em `buildings`, não em `decorations`) | Sim (automático, mesmo mecanismo das demais `buildings`) |
+
+Pipeline de renderização igual ao já usado pra casa/moinho/celeiro
+(`SubViewport` + `Camera3D` ortográfica elevada + `DirectionalLight3D` key/
+fill, script descartável não versionado): `GLTFDocument.append_from_file`
+carrega cada `.glb` direto do caminho absoluto (não pelo `res://`, os arquivos
+não estão na árvore importável do projeto), monta a composição, captura via
+`SubViewport.get_texture().get_image()` e recorta com `get_used_rect()` +
+margem. **Desta vez a renderização funcionou em `--headless`** pra consultar
+geometria (`AABB`, sem rasterizar) mas **precisou de janela real (sem
+`--headless`)** pra capturar pixel de verdade — em `--headless` o Godot usa
+um rasterizador dummy que devolve textura vazia/lixo, não trava
+indefinidamente como o registro anterior desta seção sugeria (Farm Buildings,
+2026-08-25) mas também não renderiza nada visível.
+
+`village-fence-broken`/`village-barricade`/`village-bridge-broken` entraram
+em `CURATED_PROP_TEXTURES`/`VILLAGE_PROP_MAX_DIM` (mesmo mecanismo dos props
+"decorativos" já existentes), mas — ao contrário deles — sua célula também é
+somada a `blocked_tiles` por `_village_definition()` (`scenario_manager.gd`,
+array `obstacles`), então bloqueiam movimento de verdade: barricada no meio
+da estrada principal (7,6), trecho de cerca arrombado (5,7) e coto de ponte
+na margem do rio onde a estrada encontra a água (10,7). `village-house-ruin`
+entra como um quinto item de `buildings` (5,0, 2x2, canto livre a nordeste),
+bloqueando pelo mesmo mecanismo automático das demais construções — não
+precisou de nenhuma lista nova pra isso.
+
+### Casas da Vila trocadas por pixel art pintado (2026-09-05, mesmo dia)
+
+Usuário achou as 3 casas (`village_house_1/2/3.png`, recortes do pack
+isométrico "Ultimate Fantasy RTS") fracas visualmente perto da imagem de
+referência (vila em pixel art pintado à mão, telhado com textura de telha,
+sombreamento rico, estilo "Sea of Stars"/Stardew Valley) e pediu mais
+qualidade/vida nesse asset específico.
+
+Substituídas pelo pack **"Pixel Art Fantasy Houses Top Down – Free Pack"**
+de Luminous Dice (itch.io) — pintado à mão, telhado com textura de telha
+real, várias variantes de corpo/telhado e até uma versão já danificada.
+**Licença própria (não é CC0)**: uso livre em projetos pessoais/comerciais,
+pode editar/remixar/recolorir, só não pode revender ou redistribuir os
+arquivos (originais ou modificados) como pack de assets próprio; crédito
+apreciado mas não obrigatório (texto completo em
+`assets/props/village/source/fantasy_houses_pack/ReadMe.txt`, junto do PNG
+original — mesma regra de proveniência dos demais packs).
+
+O pack só vem em roxo (mais 3 variantes soltas de telhado em vermelho/azul/
+verde, mas sem o corpo "sem telhado" correspondente pra recombinar). Em vez
+de tentar remontar peça por peça, cada casa final foi recolorida por rotação
+de matiz (HSV) só nos pixels do telhado roxo (faixa de matiz ~283°±40°,
+saturação mínima 0.18 — exclui madeira/contorno preto/realce branco, que têm
+matiz bem diferente ou saturação baixa), preservando saturação e valor
+originais — o sombreamento pintado (dobras da telha, luz/sombra) sai intacto,
+só a cor muda. Matiz-alvo de cada recolor amostrado das próprias peças de
+telhado vermelho/azul/verde do pack (matiz médio real, não escolhido no
+olho), pra bater com a paleta que o próprio artista já validou:
+
+| Sprite | Peça de origem (`Fantasy_Houses.png`, retângulo em px) | Matiz roxo→alvo | Resultado |
+|---|---|---|---|
+| `village_house_1.png` | Casa de telhado grande em duas águas, `(10,316,236,276)` | 283.2°→202.5° (azul, igual à peça de telhado azul do pack) | Bate com o telhado azul-esverdeado da imagem de referência do usuário |
+| `village_house_2.png` | Casa pequena de telhado em hangar, `(10,108,140,180)` | 283.2°→0.0° (vermelho, igual à peça de telhado vermelha do pack) | Variedade de cor entre as 3 casas |
+| `village_house_3.png` | Casa-torre de 3 andares, `(170,12,140,292)` | 283.2°→156.5° (verde, igual à peça de telhado verde do pack) | Variedade de cor + silhueta mais alta/estreita |
+
+Script de recolorização descartável (não versionado) usando PIL/numpy: máscara
+por distância angular de matiz + `colorsys.hsv_to_rgb` pixel a pixel dentro da
+máscara. Resolução nativa bem menor que os sprites antigos (140-236px de
+largura contra ~350px) — proposital, dá o visual "pixel grande" de pixel art
+de verdade em vez de um render 3D suavizado; `board_view.gd` já usa
+`texture_filter = NEAREST` no nó inteiro, então o upscale fica nítido/
+quadriculado, não borrado. Nenhuma mudança de código foi necessária além de
+sobrescrever os 3 PNGs — `VILLAGE_HOUSE_TEXTURES`/`_contain_rect`
+(`board_view.gd`) já lidam com qualquer resolução/proporção de origem.
+
+## PORTO — novo cenário independente (2026-09-05)
+
+Cenário jogável novo, pedido do usuário, inspirado na composição de
+`cenario1.png` (vila costeira pintada: casa grande, praça de pedra, fonte/
+monumento central, água com margem) — só como referência de COMPOSIÇÃO, sem
+copiar pixel a pixel. Ver `ScenarioManager._porto_definition()`,
+`GameState._setup_porto()`, `board_view.gd` (`_draw_porto_board`/`_draw_
+porto_water`/`_draw_porto_fountain`/`_draw_battleable_debug`) e
+`tests/unit/test_scenario_porto.gd`.
+
+Assets novos, todos do **Kenney "Fantasy Town"** (CC0 1.0,
+`props/fantasyTown_0.1/`, já usado antes pelos obstáculos da Vila — mesmo
+pack, `.glb` copiados pra `assets/props/porto/source/fantasy_town/`):
+
+| Sprite | Peça do kit | Kind | Uso |
+|---|---|---|---|
+| `porto_fountain.png` | `fountainRoundDetail.glb` (pronta) | `porto-fountain` | Fonte/monumento (landmark #2), 2x2 tiles, bloqueia. Brilho central é procedural (`_draw_porto_fountain`), não faz parte do PNG — ecoa o obelisco luminoso da referência sem copiar o desenho. |
+| `porto_pier_deck.png` | `planks.glb` (pronta) | `porto-pier` (terreno estático, tile a tile) | Píer de madeira, 3 tiles, bloqueia (`battleable=false` pedido explicitamente mesmo parecendo superfície andável). |
+| `porto_cart.png` | `cart.glb` (pronta) | `porto-cart` (prop curado) | Carroça de mercador perto do píer/praça, puramente decorativa (bloqueia por entrar em `blocked_tiles`, igual aos demais obstáculos avulsos). |
+
+Casa grande (landmark #1) e demais props (cerca, barril, caixa, pedra de
+margem, barco) **não precisaram de asset novo** — reaproveitam sprites já
+existentes e já documentados nas seções da Vila acima:
+`village_house_1.png` (via o mesmo mecanismo `buildings`/`_draw_village_
+building` da Vila, kind genérico `"village-house"`, sem ciclar variante),
+`village-fence`, `tower-barrel`/`tower-crate`/`tower-crate-stack`
+(Ultimate Fantasy RTS, Quaternius CC0), `field-rock-1`/`field-rock-2`
+(mesmo pack, já usados pelo Campo) e `village-boat` (Ships by @Quaternius,
+CC0).
+
+**Atualização (2026-09-06)**: reconstruído com recortes reais tirados PELO
+USUÁRIO da própria imagem de referência (`porto/porto.png`, pasta fora do
+projeto) — substitui o conjunto acima quase por inteiro. `porto_fountain.png`
+e `porto_pier_deck.png` (Kenney) foram removidos do projeto; `porto_cart.png`
+é o único asset 3D antigo mantido (sem equivalente no recorte pixel-art).
+`_draw_porto_board()`/`_draw_porto_water()`/nova `_draw_porto_house()`
+desenham sprite real esticado/tileado por célula em vez de `draw_rect`
+procedural para praça e casa; os juncos da margem (`shore_tufts`) viram
+sprite real em vez das linhas onduladas de antes.
+
+**Atualização (2026-09-06, água)**: `porto_water.png` (recorte de
+`porto/tile_35.png`) foi removido de novo — pedido do usuário, a água
+precisava ficar "unida, igual o rio do Campo" em vez de blocos separados, e
+o recorte por célula criava costura visível de tile em tile (a arte tem
+mottling próprio que não alinha nas bordas). `_draw_porto_water()` voltou ao
+gradiente procedural (varia suave por seno, sem repetição de padrão — zero
+costura por definição) e ganhou uma margem/costa: uma linha traçada em CADA
+aresta onde uma célula de água encosta em terra firme (checagem dos 4
+vizinhos contra o próprio conjunto de tiles de água), cobrindo o formato
+irregular real do PORTO (recorte do píer, bolsão isolado do canto) sem
+precisar forçar o polyline fino de `_draw_river_bands` (pensado pra um rio
+de 1 célula de largura, não uma costa larga como a do PORTO) por cima de uma
+área errada.
+
+| Sprite | Origem | Kind | Uso |
+|---|---|---|---|
+| `assets/props/porto/pixel/porto_house.png` | Recorte de `porto/tile_1.png` | `porto-house` | Casa grande (landmark #1), substitui `village-house`/`_draw_village_building` só neste cenário |
+| `assets/props/porto/pixel/porto_fountain.png` | Recorte de `porto/tile_2.png` | — (const `PORTO_FOUNTAIN_TEXTURE`) | Fonte/monumento (landmark #2); brilho central continua procedural |
+| `assets/props/porto/pixel/porto_cobblestone.png` | Recorte de `porto/tile_25.png` | — (desenhado direto por `_draw_porto_board`) | Piso da praça, substitui o cinza procedural |
+| `assets/props/porto/pixel/porto_dock_plank.png` | Recorte de `porto/tile_21.png` | `porto-pier` (terreno estático) | Píer de madeira |
+| `assets/props/porto/pixel/porto_fence.png` | Recorte de `porto/tile_6.png` | `porto-fence` | Cerca de madeira |
+| `assets/props/porto/pixel/porto_barrel.png` | Recorte de `porto/tile_12.png` | `porto-barrel` | Barril avulso |
+| `assets/props/porto/pixel/porto_barrel_stack.png` | Recorte de `porto/tile_52.png` | `porto-barrel-stack` | Pilha de barris |
+| `assets/props/porto/pixel/porto_crate.png` | Recorte de `porto/tile_13.png` | `porto-crate` | Caixa |
+| `assets/props/porto/pixel/porto_mossy_rock.png` | Recorte de `porto/tile_16.png` | `porto-mossy-rock` | Pedra musgosa de transição grama→água |
+| `assets/props/porto/pixel/porto_boat.png` | Recorte de `porto/tile_23.png` | `porto-boat` | Barco ancorado, substitui `village-boat` só aqui |
+| `assets/props/porto/pixel/porto_market_stall.png` | Recorte de `porto/tile_3.png` | `porto-market-stall` | Banca de mercado (landmark #3, cluster novo) |
+| `assets/props/porto/pixel/porto_awning.png` | Recorte de `porto/tile_4.png` | `porto-awning` | Toldo do cluster de mercado |
+| `assets/props/porto/pixel/porto_lantern_post.png` | Recorte de `porto/tile_5.png` | `porto-lantern-post` | Poste de lanterna |
+| `assets/props/porto/pixel/porto_reeds_1.png`, `_2.png` | Recorte de `porto/tile_41.png`/`tile_43.png` | — (`shore_tufts` em `_draw_porto_board`) | Juncos da margem, 2 variantes |
+| `assets/props/porto/pixel/porto_lilypad.png` | Recorte de `porto/tile_47.png` | `porto-lilypad` | Vitória-régia na água |
+
+Pipeline de renderização idêntico ao já documentado (SubViewport + Camera3D
+ortográfica + `GLTFDocument.append_from_file` carregando `.glb` por caminho
+absoluto, recorte por `get_used_rect()`): **confirmado nesta sessão que
+`--headless` funciona pra consultar geometria (AABB) mas usa um
+rasterizador dummy que não produz pixels reais** — precisa de janela real
+(sem `--headless`) pra capturar a imagem, o que já estava certo no registro
+anterior desta seção (Vila, obstáculos), só a explicação da causa (dummy
+rasterizer, não travamento) foi confirmada agora.
+
+### Regras de terreno específicas do PORTO
+
+Água comum (`"water"`) em todo cenário existente é andável a custo dobrado
+(`GameState.water_step_cost`) — o usuário pediu água 100% intransitável só
+no PORTO. Em vez de mudar essa regra global, a água do PORTO usa um type
+**novo e exclusivo**, `"porto-water"`, somado a
+`BoardLayout.BLOCKING_TERRAIN_TYPES` — bloqueia total, zero efeito sobre
+`"water"` nos demais cenários (Campo/Vila/Vale de Lua/Torre continuam
+exatamente como estavam). Dois outros types novos e exclusivos do PORTO
+entraram na mesma lista pelo mesmo motivo (obstáculo próprio, não
+reaproveitável): `"porto-pier"` (píer) e `"porto-blocked"` (casa/fonte/
+cercas/barris/caixas/carroça — genérico, já que a arte desses vem de
+`buildings`/`decorations`, não do terrain_map).
+
+`GameState.is_battleable(x, y)` é um utilitário novo e genérico (funciona em
+qualquer cenário, não só o PORTO): "battleable" neste projeto é sinônimo de
+"não bloqueado pelo terreno" — não existe um modo exploração separado do
+modo batalha aqui, todo tile andável já É um tile de batalha. Grama conta
+como battleable por ausência de entrada em `terrain_map` (mesma convenção
+de todos os `_setup_*` existentes).
+
+`BoardView.debug_show_battleable` (default `false`, zero custo quando
+desligado) é o overlay de QA temporário pedido pelo usuário: verde
+translúcido em tile battleable+livre, vermelho no resto — ver
+`_draw_battleable_debug()`.
+
+**PVP**: `ScenarioManager.PORTO` entrou em `scenes/pvp_setup.gd:SCENARIO_IDS`
+— escolhível no Modo PVP como qualquer outro cenário, sem nenhuma mudança em
+`GameState.apply_pvp_scenario()` (já genérico o bastante). Fora de
+`PHASE_ORDER` de propósito: não altera a progressão de fase da campanha.
+
+**Atualização (2026-09-13, enriquecimento de decoração)**: pedido do
+usuário — distribuir mais objetos ao redor do mapa, com maior concentração
+no canto superior direito (que estava vazio), preservando casa/fonte/
+estrada centrais intocadas. Assets novos fornecidos pelo usuário na pasta
+`porto/` (fora do projeto): `tile_3/4/5.png` eram bytes idênticos aos já
+importados `porto_market_stall/awning/lantern_post.png` (reaproveitados,
+só ganharam mais 1-2 instâncias cada); `barril.png` é idêntico a
+`porto_barrel_stack.png` (reaproveitado); `caixa.png`/`saco.png` eram
+recortes novos e reais do mesmo spritesheet de referência (`tile_53.png`/
+`tile_58.png`, confirmado por hash), importados como `porto_crate_2.png`/
+`porto_sacks.png`. `arvore.png`/`luz.png`/`casa.png` vieram com um
+checkerboard cinza/branco *rasterizado* como fundo opaco (não transparência
+de verdade — export do usuário fora do pipeline do spritesheet), removido
+por script (limiar de cor quase-neutra e clara) antes de importar como
+`porto_tree.png`/`porto_lamp.png`/`porto_house_2.png`; este último
+também foi reduzido de ~1400px pro maior lado ~500px (a fonte original era
+desproporcional a qualquer uso em tile único).
+
+| Sprite | Origem | Kind | Uso |
+|---|---|---|---|
+| `assets/props/porto/pixel/porto_tree.png` | `porto/arvore.png` (limpo) | `porto-tree` | Árvore, preenchimento de borda |
+| `assets/props/porto/pixel/porto_lamp.png` | `porto/luz.png` (limpo) | `porto-lamp` | Poste com lanterna acesa + cerca baixa, variante de `porto-lantern-post` |
+| `assets/props/porto/pixel/porto_house_2.png` | `porto/casa.png` (limpo, redimensionado) | `porto-house-2` | Segunda casa (landmark do canto superior direito), prop curado de tile único — não entra em `buildings` |
+| `assets/props/porto/pixel/porto_crate_2.png` | `porto/caixa.png` = `porto/tile_53.png` | `porto-crate-2` | Caixa, variante de `porto-crate` |
+| `assets/props/porto/pixel/porto_sacks.png` | `porto/saco.png` = `porto/tile_58.png` | `porto-sacks` | Par de sacos de estopa |
+
+Todos os 5 registrados em `CURATED_PROP_TEXTURES`/`PORTO_PROP_MAX_DIM`
+(`board_view.gd`) e posicionados via `obstacles` em
+`ScenarioManager._porto_definition()` — mesmo mecanismo genérico já usado
+por todo o resto do PORTO (bloqueiam via `blocked_tiles`, sem regra nova).
+
+## DESFILADEIRO — novo cenário independente (2026-09-06)
+
+Cenário jogável novo, pedido do usuário, inspirado na composição de
+`cenario3.png` (desfiladeiro gelado: ravina central, ponte de pedra, neve,
+monólitos/lápides inclinados, montanhas nevadas ao fundo) — só como
+referência de composição/atmosfera, sem copiar pixel a pixel. Ver
+`ScenarioManager._desfiladeiro_definition()`, `GameState._setup_
+desfiladeiro()`/`maybe_trigger_desfiladeiro_wind()`, `board_view.gd`
+(`_draw_desfiladeiro_board`/`_draw_desfiladeiro_chasm`) e
+`tests/unit/test_scenario_desfiladeiro.gd`.
+
+**Atualização (2026-09-06)**: reconstruído com recortes reais tirados PELO
+USUÁRIO da própria imagem de referência (`desfiladeiro/desfiladeiro.png`,
+pasta fora do projeto) — substitui inteiramente o conjunto Kenney/Quaternius
+original abaixo. `_draw_desfiladeiro_board()`/`_draw_desfiladeiro_chasm()`
+agora desenham sprite real (textura esticada/tileada por célula) em vez de
+`draw_rect`/`draw_circle` procedural para neve, pegadas, ponte, canal de
+gelo e paredão da ravina.
+
+Assets novos:
+
+| Sprite | Origem | Kind | Uso |
+|---|---|---|---|
+| `assets/tiles/snow_pine_1.png`, `snow_pine_2.png` | Recorte direto de `desfiladeiro/tile_5.png`/`tile_6.png` (fornecidos pelo usuário) | `"tree"` (`art` alterna entre os dois) | Árvore nevada, 2 variantes |
+| `assets/props/desfiladeiro/desfiladeiro_monolith_1..4.png` | Recorte de `desfiladeiro/tile_7..10.png` | `desfiladeiro-monolith-1..4` | Lápide/monólito, obstáculo — 1 kind por instância, sem repetir arte |
+| `assets/props/desfiladeiro/desfiladeiro_rock_1..4.png` | Recorte de `desfiladeiro/tile_15,16,21,22.png` | `desfiladeiro-rock-1..4` | Pedra nevada, obstáculo |
+| `assets/props/desfiladeiro/desfiladeiro_crystal_rock.png` | Recorte de `desfiladeiro/tile_14.png` | `desfiladeiro-crystal` | Rocha escura com cristais azuis (canto da referência), obstáculo |
+| `assets/props/desfiladeiro/desfiladeiro_bush_1..3.png` | Recorte de `desfiladeiro/tile_17,19,20.png` | `desfiladeiro-bush-1..3` | Arbusto seco na neve, puramente decorativo |
+| `assets/props/desfiladeiro/desfiladeiro_snow_ground.png` | Recorte de `desfiladeiro/tile_11.png` | — (desenhado direto por `_draw_desfiladeiro_board`) | Textura de chão repetida em toda célula do tabuleiro |
+| `assets/props/desfiladeiro/desfiladeiro_snow_footprints.png` | Recorte de `desfiladeiro/tile_12.png` | — (idem) | Substitui a neve lisa nas 4 células junto às duas bocas da ponte |
+| `assets/props/desfiladeiro/desfiladeiro_bridge.png` | Recorte de `desfiladeiro/tile_4.png` | — (desenhado direto, esticado pro retângulo 4x2 da ponte) | Ponte de pedra com parapeito — vão do arco é TRANSPARENTE no PNG (ver atualização abaixo) |
+| `assets/props/desfiladeiro/desfiladeiro_cliff_wall_1.png`, `_2.png` | Recorte de `desfiladeiro/tile_25.png`/`tile_26.png` | — (colunas x=4/x=7 da ravina, uma por lado, bloco vertical único) | Paredão rochoso nevado da ravina |
+
+**Atualização (2026-09-07, geometria/rio)**: 3 pedidos do usuário resolvidos
+juntos:
+1. O corredor de 4 colunas da ravina não existe mais nas 3 primeiras linhas
+   (y=0..2, faixa de céu) — `ScenarioManager._desfiladeiro_definition()`
+   gera `chasm`/`bridge` só a partir de y=3 agora (antes cobria y=0..12
+   inteiro, ficando escondido atrás do fundo de montanhas). `sky` cobre a
+   largura INTEIRA (13 colunas) sem exceção pra essas 3 linhas.
+2. `desfiladeiro_ice_channel.png` (recorte de `tile_18.png`, linha da
+   tabela removida acima) foi descartado — as 2 colunas internas (x=5/x=6)
+   agora são um RIO DE VERDADE, reaproveitando `_draw_river_bands()` (mesma
+   função do Campo/Vale de Lua/Estrada Inverno) com um novo parâmetro
+   opcional `width_scale` (default 1.0, sem efeito nos outros chamadores) —
+   o rio do DESFILADEIRO passa `1.9` porque ocupa 2 células de largura, não
+   1. Isso também resolve o pedido de "borda do penhasco como bloco
+   vertical único": as colunas x=4/x=7 voltaram a ser só a arte da parede
+   real repetida sem mistura de gradiente escuro por cima (removido).
+3. O rio agora é UM traçado contínuo (y=3 até o fim do tabuleiro), sem cortar
+   nas linhas da ponte — `_draw_desfiladeiro_chasm()` passou a ser chamado
+   ANTES do `draw_texture_rect` da ponte (ordem trocada em `_draw_
+   desfiladeiro_board()`), deixando o vão transparente do arco da ponte
+   revelar o rio por baixo em vez da neve que aparecia ali antes.
+
+Conjunto anterior (Kenney Fantasy Town CC0, mantido aqui só como histórico —
+os arquivos abaixo foram removidos do projeto):
+
+| Sprite | Origem | Kind | Uso |
+|---|---|---|---|
+| `assets/tiles/snow_pine.png` | Recolor de `assets/tiles/forest_pine.png` (já real do projeto, Quaternius CC0 — ver seção "Árvores da Floresta" acima) | `"tree"` (reaproveita o obstáculo já existente, só troca `art`) | Árvore nevada — folhagem levada pra um branco-azulado pálido preservando sombra/luz original (mesma técnica de rotação HSV das casas da Vila, mas em vez de girar o matiz, empurra pra perto do branco proporcional à saturação) |
+| ~~`assets/props/desfiladeiro/desfiladeiro_rock.png`~~ | Kenney Fantasy Town (CC0), `rockLarge.glb` | ~~`desfiladeiro-rock`~~ | Removido — ver tabela acima |
+| ~~`assets/props/desfiladeiro/desfiladeiro_monolith.png`~~ | Kenney Fantasy Town (CC0), `pillarStone.glb`, renderizado inclinado (13°) | ~~`desfiladeiro-monolith`~~ | Removido — ver tabela acima |
+
+`snow_pine.png` (sem sufixo) continua no projeto: ainda é usado pela ESTRADA
+INVERNO (ver seção abaixo).
+
+### Regras de terreno e mecânica específicas do DESFILADEIRO
+
+**Ponte**: retângulo lógico de 2 (espessura) x 4 (comprimento) tiles —
+`ScenarioManager._desfiladeiro_definition()` gera isso varrendo as 4 colunas
+da ravina (x=4..7) e reservando 2 linhas (y=5..6) como `"desfiladeiro-
+bridge"` (battleable/walkable). Testado como retângulo de verdade (colunas
+distintas == 4, linhas distintas == 2), não só a contagem total de 8.
+
+**Ravina**: as mesmas 4 colunas da ponte, em TODAS as outras linhas, viram
+`"desfiladeiro-chasm"` — bloqueia unidades terrestres, sobrevoável. Esse type
+**não** entra em `BoardLayout.BLOCKING_TERRAIN_TYPES` (que bloquearia
+voadores também); em vez disso, `GameState.compute_reachable`/`_can_unit_
+anchor_at` ganharam uma checagem exclusiva pra esse type, seguindo o MESMO
+padrão de exceção `u.get("flying", false)` que a função já usava pra
+cadáver/ocupante inimigo/estrutura — não uma mecânica de voo nova só pra
+Fantasma/Fada. `GameState.is_battleable()` (utilitário genérico, reaproveitado
+do PORTO) também trata esse type como não-battleable, já que é uma pergunta
+sobre o TERRENO em si (independe de que unidade específica esteja jogando).
+
+**Vento gelado** (`GameState.maybe_trigger_desfiladeiro_wind`, chamado de
+dentro de `begin_turn_for` a cada turno, fora do bloco `if not
+pvp_custom_battle` — vale também no Modo PVP por ser hazard de mapa, não
+roteiro): a cada 5 `global_turn_count` (mesmo contador que a Vila já usa pros
+reforços dela), rola 80% de chance por unidade viva em campo e, se acertar,
+aplica dano ambiental 1-3 (gelo) + a MESMA redução de agilidade do Cone de
+Gelo do Mago — lida dinamicamente de `Spells.build()["iceCone"].
+appliesSpeedReduction` (se o Mago for rebalanceado, o vento acompanha
+automaticamente) — respeitando as mesmas regras de afinidade elemental já
+existentes (`elementAffinity["ice"]`: imune/cura/dobra, e meio dano em
+morto-vivo, os mesmos trechos que `resolve_single_hit` já usa). Não passa
+pela mira/ângulo geométrico de um ataque de verdade (não faz sentido
+flanquear o vento) nem consome CT/chama `finalize_action` — é hazard de
+mapa, testado isoladamente (`test_wind_does_not_touch_ct_or_current_actor`).
+
+Apresentação visual (pausa ~3s + tremor de câmera) reaproveita
+`BattlePresentationController.present_event` (mesmo popup com letterbox já
+usado por reforços/eventos de campanha) — ganhou um parâmetro `hold`
+opcional (default 0.55s, preserva todo chamador existente) só pra permitir
+a pausa mais longa pedida. `GameState.desfiladeiro_wind_events` é uma fila
+"só visual" no mesmo padrão de `bone_explosion_events`/`bard_song_vfx_
+events`, drenada por `main.gd:_sync_visuals()` — os efeitos (dano/status) já
+foram aplicados de forma síncrona antes disso, então a apresentação nunca
+bloqueia turn order/CT/AI/pathfinding.
+
+**PVP**: `ScenarioManager.DESFILADEIRO` entrou em `scenes/pvp_setup.gd:
+SCENARIO_IDS`, igual PORTO.
+
+## ESTRADA INVERNO — novo cenário independente (2026-09-06)
+
+Cenário jogável novo, pedido do usuário, inspirado na composição de
+`cenario2.png` (trilha de terra clara cortando a neve, rio na borda
+superior, platô elevado com pedras à direita) — sem copiar pixel a pixel.
+Ver `ScenarioManager._estrada_inverno_definition()`, `GameState._setup_
+estrada_inverno()`, `board_view.gd` (`_draw_estrada_inverno_board`/`_estrada_
+inverno_river_points`/`_draw_estrada_inverno_stairs`) e `tests/unit/
+test_scenario_estrada_inverno.gd`.
+
+Asset novo (histórico):
+
+| Sprite | Origem | Uso |
+|---|---|---|
+| `assets/tiles/bare_snow_tree.png` | Recolor de `assets/tiles/forest_pine.png` (real do projeto, Quaternius CC0) — folhagem apagada (alpha=0 nos pixels verdes) deixando só tronco/galhos, com leve geada nos galhos restantes | **Corrompido** (o color-key deixou fragmentos translúcidos em vez de um tronco limpo, visível abrindo o PNG). Nunca chegou a ser usado — ver atualização abaixo. |
+
+Antes desta atualização, poço/pedras/barris/ossada reaproveitavam sprites
+genéricos de outros cenários (`village-well`, `field-rock-1/2/3`,
+`tower-barrel`, `corpse-bones-pile` do 2º Andar da Torre) e as árvores usavam
+`snow_pine.png` (substituto do DESFILADEIRO, já que o recolor acima saiu
+corrompido).
+
+**Atualização (2026-09-06)**: reconstruído com recortes reais tirados PELO
+USUÁRIO da própria imagem de referência (`estrada inverno/estrada
+inverno.png`, pasta fora do projeto) — substitui os reaproveitamentos acima
+por kinds/arts próprios do cenário. O chão de neve, a água e a trilha
+CONTINUAM procedurais de propósito: os tiles equivalentes da pasta do
+usuário são peças de autotile com borda irregular transparente (pensadas pra
+composição vizinho-a-vizinho, não pra repetição lado a lado) — usá-las cru
+por célula criaria uma grade visível de retalhos separados em vez de um chão
+contínuo, então só os elementos "objeto isolado" (parede, árvores, poço,
+pedras, barris, caveira) foram trocados.
+
+| Sprite | Origem | Kind/`art` | Uso |
+|---|---|---|---|
+| ~~`assets/props/estrada_inverno/estrada_inverno_cliff_wall.png`~~ | Recorte de `estrada inverno/tile_18.png` | ~~`estrada-inverno-cliff`~~ | Removido — ver atualização abaixo |
+| `assets/props/estrada_inverno/estrada_inverno_tree_1.png`, `_2.png` | Recorte de `estrada inverno/tile_26.png`/`tile_27.png` | `"tree"` (`art` alterna entre os dois) | Árvore seca/nevada, substitui `snow_pine.png` |
+| `assets/props/estrada_inverno/estrada_inverno_well.png` | Recorte de `estrada inverno/tile_36.png` | `estrada-inverno-well` | Poço de pedra |
+| `assets/props/estrada_inverno/estrada_inverno_rock_1..3.png` | Recorte de `estrada inverno/tile_29,30,31.png` | `estrada-inverno-rock-1..3` | Pedra nevada |
+| `assets/props/estrada_inverno/estrada_inverno_barrel_1..2.png` | Recorte de `estrada inverno/tile_37,38.png` | `estrada-inverno-barrel-1..2` | Barril nevado |
+| `assets/props/estrada_inverno/estrada_inverno_skull.png` | Recorte de `estrada inverno/tile_44.png` | `estrada-inverno-skull` | Caveira na neve, substitui `corpse-bones-pile` |
+
+**Atualização (2026-09-13, chão de neve real + enriquecimento)**: pedido
+explícito do usuário — a nota acima (chão procedural "de propósito", por
+causa da borda irregular do autotile) foi revista: `_draw_estrada_inverno_
+board()` agora desenha `assets/tiles/estrada_inverno_neve1.png` (recorte de
+`estrada inverno/neve1.png` — já estava importado de uma tentativa anterior,
+só nunca tinha sido ligado ao código de desenho) por célula via `draw_texture_rect`, EXATAMENTE
+a mesma técnica já usada por `DESFILADEIRO_SNOW_TEXTURE`/`_draw_
+desfiladeiro_board` (que tem a mesma borda irregular transparente e já
+está em produção) — água e trilha continuam procedurais, não fazem parte
+deste pedido. Também entraram 3 árvores a mais (`estrada_inverno_tree_3.png`,
+recorte novo) e 9 props novos espalhados pelo mapa:
+
+| Sprite | Origem | Kind | Uso |
+|---|---|---|---|
+| `estrada_inverno_tree_3.png` | `estrada inverno/arvore3.png` | `"tree"` (`art`) | 3ª variante de árvore seca/nevada |
+| `estrada_inverno_log_1.png` | `estrada inverno/arvore4.png` | `estrada-inverno-log-1` | Tronco caído nevado |
+| `estrada_inverno_log_2.png` | `estrada inverno/arvore6.png` | `estrada-inverno-log-2` | Tronco caído nevado, variante |
+| `estrada_inverno_stump.png` | `estrada inverno/arvore5.png` | `estrada-inverno-stump` | Toco nevado |
+| `estrada_inverno_snow_rocks_1/2.png` | `estrada inverno/tile_40.png`/`tile_41.png` | `estrada-inverno-snow-rocks-1/2` | Agrupamento de pedras nevadas |
+| `estrada_inverno_snow_pebbles_1/2.png` | `estrada inverno/tile_42.png`/`tile_43.png` | `estrada-inverno-snow-pebbles-1/2` | Pedrinhas nevadas, menores |
+| `estrada_inverno_snow_bush_1/2.png` | `estrada inverno/tile_45.png`/`tile_46.png` | `estrada-inverno-snow-bush-1/2` | Arbusto nevado |
+
+Todos registrados em `CURATED_PROP_TEXTURES`/`ESTRADA_INVERNO_PROP_MAX_DIM`
+(`board_view.gd`) e posicionados via `obstacles`/`trees` em
+`ScenarioManager._estrada_inverno_definition()` — mesmo mecanismo genérico
+já usado pelo resto do cenário (bloqueiam via `blocked_tiles`).
+
+**Atualização (2026-09-06, morro/parede)**: pedido do usuário — "o morro onde
+os inimigos estão começando" precisa ficar IGUAL ao morro da HORDA (Vale de
+Lua). `estrada_inverno_cliff_wall.png` (recorte da referência do usuário,
+tabela acima) foi removido; `_draw_estrada_inverno_cliff_tile()` (`board_
+view.gd`) agora desenha os MESMOS GIDs reais do paredão de terra do mapa
+original do Legend of Lua (`LuaValleyLayout.ATLAS_PATH`, GIDs 1926 de borda/
+1966-2046 de continuação — os mesmos que compõem o paredão visível em
+`_draw_lua_valley_board`), em vez de arte própria nova — mesma técnica de
+`_draw_lua_atlas_tile`, só reindexando pela posição da célula dentro de cada
+trecho da parede (a faixa da Estrada Inverno é mais alta que os 4 tiles
+originais do recorte da Horda, então repete os 3 GIDs de "corpo" em vez de
+parar em 4 linhas). A escada de acesso já reaproveitava o mesmo asset da
+Horda (`LuaValleyLayout.LADDER_PATH`) antes desta atualização — só a parede
+em si estava com arte própria, agora as duas partes usam a fonte real da
+Horda.
+
+### Água — reaproveitamento literal do rio do Campo (regra 7/8 do pedido)
+
+A água daqui usa o **mesmo type `"water"`** já usado por Campo/Vila/Vale de
+Lua/Torre — **sem type próprio**. Isso herda automaticamente todo o
+comportamento existente sem duplicar nenhuma lógica:
+
+- `GameState.water_step_cost`: custo de movimento dobrado (não bloqueia);
+- `GameState.get_effective_hit_chance_breakdown`: -10pp atirando de dentro
+  d'água, +10pp acertando alvo "atolado" na água;
+- imunidade a pegar fogo (`resolve_single_hit`, `appliesBurn`);
+- bypass total pra quem voa (`u.get("flying", false)`).
+
+Testado explicitamente (`test_water_reuses_the_exact_same_type_and_mechanics_
+as_field`) comparando o terrain type e o custo de movimento entre um tile de
+água do Campo (`BoardLayout.TERRAIN_LAYOUT["water"]`) e um tile de água da
+Estrada Inverno — são literalmente o mesmo comportamento.
+
+O visual reaproveita a MESMA função `_draw_river_bands()` (bandas de
+gradiente + brilho de correnteza) que o Campo (`_draw_continuous_river`) e o
+Vale de Lua (`_draw_lua_river`) já usam — só com pontos próprios
+(`_estrada_inverno_river_points`, cobrindo a borda superior em vez da coluna
+central do Campo).
+
+### Platô elevado — mesmo padrão estrutural da Horda (regra 9-13, 24)
+
+Auditado como o Vale de Lua ("Horda") implementa sua área elevada: **não**
+existe um sistema de "altura"/elevação numérica no motor (`elevation_map` é
+só uma tabela auxiliar do Campo pra água/estruturas, não usada pelo Vale de
+Lua) — o "platô de cima" da Horda é simplesmente terreno comum (sem type
+especial) isolado topologicamente por uma parede sólida
+(`"lua-mountain"`, bloqueia) com um único vão (`"lua-ladder"`, andável)
+cortando essa parede.
+
+A Estrada Inverno reaproveita EXATAMENTE esse padrão estrutural — parede
+sólida + vão único de acesso —, mas com **types próprios**
+(`"estrada-inverno-cliff"` bloqueia, `"estrada-inverno-stairs"` andável) em
+vez de reaproveitar `"lua-mountain"`/`"lua-ladder"` diretamente: esses dois
+já têm renderização em ATLAS bem específica do Vale de Lua
+(`_draw_lua_valley_board`, GIDs de um tileset real portado do Legend of
+Lua), sem nenhum parâmetro pra reaproveitar em outro formato de mapa —
+reutilizar o type arriscaria interferir no render do cenário existente
+("não altere os cenários existentes" era regra explícita do pedido). O
+*padrão* foi 100% reaproveitado; só o *type/asset* de cada peça é próprio:
+
+- Parede (`estrada-inverno-cliff`): mesmo asset visual `MOUNTAIN_TEXTURE`
+  (`assets/tiles/mountain.png`, imagem do usuário) já usado pelo Campo.
+- Escada (`estrada-inverno-stairs`): mesmo asset `ladder_long.png`
+  (CC0, Quaternius/Platformer Pack — já vendorizado em `assets/props/
+  waterfall/ladder_long.png`, ver seção "Escada caminhável da Horda" acima)
+  e a mesma técnica de desenho de `_draw_lua_ladder` (textura esticada pelas
+  N células da escada, sombra curta na base) — só parametrizada pros tiles
+  próprios da Estrada Inverno em vez do array hardcoded do Vale de Lua.
+
+`test_plateau_is_only_reachable_through_the_stairs` reconstrói o caminho
+real até um tile do platô e confirma que ele sempre passa por uma célula de
+"stairs" — a mesma garantia estrutural que a Horda já tem.
+
+### Nota técnica: neve opaca em vez de translúcida nesta seção
+
+Ao contrário do DESFILADEIRO (onde a neve translúcida por cima de terreno já
+desenhado funciona bem), aqui a neve precisou ser **opaca**: o loop genérico
+de terreno estático em `_draw()` desenha árvore/parede ANTES do código
+específico do cenário rodar, e as duas artes (`bare_snow_tree.png`,
+`mountain.png`) têm fundo transparente (não uma cor sólida) — neve
+translúcida por cima só lavava a arte quase até sumir, e pular esses tiles
+deixava a grama verde universal (primeira camada de `_draw()`) aparecer por
+trás. A solução: pintar neve opaca em TODO tile primeiro, depois redesenhar
+árvore/parede por cima (mesmas texturas que o loop genérico já ia usar, só
+que depois da neve em vez de antes) — ver comentário em `_draw_estrada_
+inverno_board`.
+
+**PVP**: `ScenarioManager.ESTRADA_INVERNO` entrou em `scenes/pvp_setup.gd:
+SCENARIO_IDS`, igual PORTO/DESFILADEIRO.
+
 ### Castelo e montanha do Campo trocados por imagens do usuário (2026-08-26)
 
 `assets/tiles/castle.png` e `assets/tiles/mountain.png` substituídos por
@@ -500,3 +1020,68 @@ terceiros — recebidas como imagem anexada na conversa, redimensionadas com
 `Image.resize(..., INTERPOLATE_LANCZOS)` antes de salvar porque
 `board_view.gd` usa `texture_filter = NEAREST` e reduzir uma imagem grande
 direto com nearest-neighbor pinça artefatos).
+
+## TEMPLO e CEMITÉRIO — novos cenários independentes (2026-09-18)
+
+Dois mapas verticais maiores que 13x13 (Templo 13x26, Cemitério 17x24), fora de
+`ScenarioManager.PHASE_ORDER`, escolhíveis pelos botões TEMPLO/CEMITÉRIO do topo
+e pela tela de cenários do PVP. Mesmo grid (`BoardView.TILE_SIZE` = 96), mesma
+câmera (zoom/arrasto/barras de rolagem, `BoardView._update_camera`), mesmo
+movimento/colisão (`GameState.compute_reachable`/`_can_unit_anchor_at`).
+
+### Origem dos assets
+
+| Pasta original (raiz do repositório) | Conteúdo | Destino no projeto |
+|---|---|---|
+| `templo/tile_1..60.png` | recortes com alpha da folha `ChatGPT Image ... 19_50_18.png` (pinheiros, ruínas, monólitos, arco, árvore rúnica, plataforma ritual, lagoa...) | `assets/props/templo/templo_<nome>.png` (60) |
+| `cemitario/tile_1..50.png` | recortes com alpha da folha `ChatGPT Image ... 19_59_48.png` (lápides, cruzes, sarcófago, cripta, portão, estátuas, velas, lanternas, névoa...) | `assets/props/cemiterio/cemiterio_<nome>.png` (48) |
+| `templo/templo.jpeg`, `cemitario/cemiterio.png` | imagens-guia de composição (NÃO são usadas como fundo) | — |
+
+Nota: `cemiterio.png` (1024x1536, RGB opaco) é a **imagem-guia** da composição;
+a folha de assets real é a "ChatGPT Image", que já vem recortada em `tile_N.png`.
+
+Os originais nunca são alterados. `tools/import_scenery_tiles.py` (reexecutável:
+`python tools/import_scenery_tiles.py --src ..`) copia cada recorte com nome
+semântico, sem mexer em cores, contornos ou resolução dos pixels. Só faz:
+
+1. remover fragmentos soltos de objetos vizinhos que vieram no recorte
+   (componentes minúsculos, pedaços encostados na borda e retângulos listados em
+   `DROP_RECTS`/`ERASE_RECTS`: caveira na névoa, resto de lanterna nas folhas,
+   pedras/ilhota na lagoa, pontas de grade...);
+2. dividir recortes que juntavam vários objetos: `tile_37` do cemitério (3
+   árvores secas; a árvore do meio vem cortada pela vizinha e não é exportada) e
+   `tile_24` (portão em duas metades, com o vão do caminho no meio, como na
+   imagem-guia);
+3. aparar a margem totalmente transparente (o pivô de desenho é a base do
+   desenho visível).
+
+Fora de escopo no Cemitério (pedido: sem templo/capela/altar/círculo ritual/runas):
+`tile_23` (capela), `tile_39` (obelisco com runas), `tile_50` (círculo ritual).
+As pedras do caminho não vieram nos recortes: são desenhadas proceduralmente
+(`SceneryVisuals.Ground._draw_trail`) em paralelepípedos grandes, com a mesma
+paleta cinza-azulada. O pacote do Templo não traz velas/lanternas: as runas
+brilhantes (árvore e plataforma), a névoa e as partículas do bioma fazem a
+atmosfera sobrenatural.
+
+### Arquitetura
+
+- `data/haunted_scenery.gd` (`HauntedScenery`): montador. Cada prop tem footprint
+  (fw x fh células), sólido (`"wall"` bloqueia todos, `"prop"` bloqueia unidades de
+  1 casa e é ignorado por unidades de 4 casas, `""` só visual) e camada (`"y"`
+  ordenado por Y, `"flat"` decalque no chão). Não deixa sólido sobre caminho/spawns.
+- `data/cemiterio_layout.gd`, `data/templo_layout.gd`: catálogo, caminhos (polilinhas
+  rasterizadas em células), spawns e composição. Seed fixa: o mapa é igual em toda partida.
+- `autoload/scenario_manager.gd`: `TEMPLO`, `CEMITERIO` (definição via os layouts).
+- `autoload/game_state.gd` `_setup_haunted_scenery`: terrain_map a partir de
+  `blocked_tiles` (`scenery-wall`/`scenery-prop`) e da água da lagoa; os times padrão
+  nascem nos spawns (nenhuma unidade fixa). Cada slot inimigo tem 2x2 livres.
+- `scenes/scenery_visuals.gd` (`SceneryVisuals`): apresentação. `Ground` (filho do
+  BoardView com z_index -1: grama, caminho, decalques, vinheta; os destaques de
+  movimento/ataque continuam por cima), `Prop` (z_index = linha dos pés; fica
+  translúcido quando alguém está atrás), `Light` (brilho aditivo de velas/lanternas/runas),
+  `Mist` (névoa à deriva).
+- `data/board_layout.gd`: `scenery-wall`/`scenery-prop` em `BLOCKING_TERRAIN_TYPES`;
+  `scenery-prop` em `LARGE_UNIT_PASSABLE_TERRAIN_TYPES`.
+- Ferramentas: `tools/render_scenery_preview.tscn` (mapa inteiro num PNG) e
+  `tools/scenery_ingame_check.tscn` (cena Main real, capturas dos 4 cantos, relatório
+  de tokens/rolagem). Testes: `tests/unit/test_scenery_scenarios.gd`.

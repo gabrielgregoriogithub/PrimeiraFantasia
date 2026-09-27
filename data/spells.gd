@@ -32,13 +32,14 @@ static func build() -> Dictionary:
 			"sfx": "lightning",
 		},
 		"missile": {
-			"name": "Míssil Mágico", "icon": "✨", "ctCost": 50, "mpCost": 3,
-			# Dano igual à Varinha de Míssil Mágico de referência sem nenhum
-			# nível de upgrade: min(lvl)=2+lvl, max(lvl)=8+2*lvl com lvl=0 —
-			# ver WandOfMagicMissile.java. O dano máximo aqui era 10 (não 8),
-			# divergindo do valor real da varinha.
-			"damageMin": 2, "damageMax": 8, "critMultiplier": 1, "critChance": 0,
-			"hitChance": 1, "minRange": 1, "maxRange": 5, "targetMode": "enemy",
+			"name": "Míssil Mágico", "icon": "✨", "ctCost": 50, "mpCost": 4,
+			# Pedido do usuário: em vez de 1 impacto só (2-8 de dano), agora
+			# dispara 4 mísseis em sequência (ver "hits" em perform_attack),
+			# cada um rolando acerto/dano próprios (1-2 cada) — mesmo VFX/SFX
+			# da Varinha de Míssil Mágico do SPD (magic-missile-spd), só
+			# disparado 4 vezes.
+			"damageMin": 1, "damageMax": 2, "hits": 4, "critMultiplier": 1, "critChance": 0,
+			"hitChance": 1, "minRange": 1, "maxRange": 6, "targetMode": "enemy",
 			"projectile": "magic-missile-spd",
 			# A varinha de referência nunca "erra" por obstrução — o disparo
 			# sempre acerta o primeiro personagem no caminho da Ballistica,
@@ -48,7 +49,7 @@ static func build() -> Dictionary:
 			# tinha sido setada aqui — a magia era bloqueada por elevação na
 			# prática, ao contrário do que o tooltip dizia.
 			"ignoresTerrainLineOfSight": true,
-			"tooltipNote": "Ignora obstáculos no caminho, como o Arco.",
+			"tooltipNote": "Dispara 4 mísseis em sequência, cada um causando 1-2 de dano. Ignora obstáculos no caminho, como o Arco.",
 			"sfx": "magicMissileZapSpd",
 		},
 		"lightning": {
@@ -84,18 +85,41 @@ static func build() -> Dictionary:
 			"sfx": "heal",
 		},
 		"resurrect": {
-			"name": "Ressurreição", "icon": "✨", "kind": "resurrect", "ctCost": 90, "mpCost": 7,
+			# Pedido do usuário: ícone próprio (era o mesmo ✨ do Míssil Mágico
+			# da Maga).
+			"name": "Ressurreição", "icon": "🕊️", "kind": "resurrect", "ctCost": 90, "mpCost": 7,
 			"critChance": 0, "hitChance": 0.7, "minRange": 0, "maxRange": 3,
 			"targetMode": "resurrect",
 			"tooltipNote": "Alcance 3; ressuscita um aliado morto há até 3 turnos com metade do HP máximo. 70% de chance de sucesso.",
+			# Pedido do usuário: sonoplastia própria (mais grandiosa que a Cura,
+			# ver AudioEngine.play_sfx:"resurrectChime"), não mais a mesma da Cura.
+			"sfx": "resurrectChime",
+		},
+		# Pedido do usuário: Reencarnação (Maga/Xamã/Fada/Lich). Lançada num
+		# ALIADO VIVO (não num cadáver, ao contrário de Ressurreição/
+		# Reanimação) — marca o alvo com o status "reincarnation" (ver
+		# add_status_effect em cast_reincarnation, sem turnsLeft: fica
+		# indefinidamente até ser consumido). Se esse aliado morrer depois,
+		# GameState.finalize_death_if_needed trata a morte como se ele
+		# tivesse o campo `resurrection` embutido (mesmo motor do Zumbi):
+		# ressuscita sozinho na sua PRÓPRIA próxima rodada, com metade do
+		# HP/MP, 100% de chance (não é um "teste", é automático) — e o selo
+		# se consome nessa hora, não protege uma segunda morte.
+		"reincarnation": {
+			"name": "Reencarnação", "icon": "♻️", "kind": "reincarnation", "ctCost": 50, "mpCost": 10,
+			"critChance": 0, "hitChance": 0.8, "minRange": 1, "maxRange": 5,
+			"targetMode": "reincarnation",
+			"tooltipNote": "Alcance 5; marca um aliado vivo com um selo de reencarnação. Se ele morrer depois, ressuscita sozinho na rodada seguinte com metade do HP e do MP — selo de uso único.",
 			"sfx": "heal",
 		},
 		"resurrectAlchemist": {
-			"name": "Ressurreição", "icon": "✨", "kind": "resurrect", "ctCost": 90, "mpCost": 7,
+			# Mesmo ícone da Ressurreição comum (ver "resurrect" acima) — é a
+			# mesma habilidade, só sem chance de falha.
+			"name": "Ressurreição", "icon": "🕊️", "kind": "resurrect", "ctCost": 90, "mpCost": 7,
 			"critChance": 0, "hitChance": 1, "minRange": 0, "maxRange": 3,
 			"targetMode": "resurrect",
 			"tooltipNote": "Alcance 3; ressuscita um aliado morto há até 3 turnos com metade do HP máximo.",
-			"sfx": "heal",
+			"sfx": "resurrectChime",
 		},
 		"creepingDestruction": {
 			"name": "Destruição Rastejante", "icon": "🕸️", "kind": "creeping-line",
@@ -137,10 +161,30 @@ static func build() -> Dictionary:
 			"tooltipNote": "Se o próximo ataque neste turno acertar, o alvo sangra (1 de dano por turno) e perde 1 de deslocamento, por 3 turnos. Acumula com usos futuros.",
 			"sfx": "melee",
 		},
+		"stealHp": {
+			"name": "Furtar HP", "kind": "steal-hp", "ctCost": 0, "mpCost": 3,
+			"damageMin": 3, "damageMax": 6, "critMultiplier": 1, "critChance": 0,
+			"hitChance": 0.8, "minRange": 0, "maxRange": 0, "targetMode": "self",
+			"tooltipNote": "Prepara o próximo ataque de Punhal ou Besta: adiciona 3-6 de dano e recupera esse valor de HP.", "sfx": "melee",
+		},
+		"stealMp": {
+			"name": "Furtar MP", "kind": "steal-mp", "ctCost": 0, "mpCost": 3,
+			"damageMin": 0, "damageMax": 0, "critMultiplier": 1, "critChance": 0,
+			"hitChance": 0.8, "minRange": 0, "maxRange": 0, "targetMode": "self", "noDamage": true,
+			"appliesMpDrainMin": 3, "appliesMpDrainMax": 6,
+			"tooltipNote": "Prepara o próximo ataque de Punhal ou Besta: rouba 3-6 MP e transfere o mesmo valor ao Ladino.", "sfx": "melee",
+		},
+		"stealCt": {
+			"name": "Furtar CT", "kind": "steal-ct", "ctCost": 0, "mpCost": 3,
+			"damageMin": 0, "damageMax": 0, "critMultiplier": 1, "critChance": 0,
+			"hitChance": 0.8, "minRange": 0, "maxRange": 0, "targetMode": "self", "noDamage": true,
+			"appliesCtDrainMin": 10, "appliesCtDrainMax": 40,
+			"tooltipNote": "Prepara o próximo ataque de Punhal ou Besta: rouba 10-40 CT e transfere o mesmo valor ao Ladino.", "sfx": "melee",
+		},
 		"trap": {
 			"name": "Armadilha", "icon": "🪤", "ctCost": 55, "mpCost": 3, "areaRadius": 1,
 			"noDamage": true, "minRange": 1, "maxRange": 3, "targetMode": "trap",
-			"tooltipNote": "Invisível até um inimigo pisar: causa 1-3 de dano e cada quadrado custa +1 de deslocamento.<br>Revela a área ao ser acionada, some em 3 turnos. Aliados imunes; não instala em cima de alguém.",
+			"tooltipNote": "Fica instalada sem limite de turnos até alguém pisar: causa 1-3 de dano, interrompe o movimento naquele quadrado e some na hora. Só o Ladino que a instalou é imune — aliados também podem detoná-la; não instala em cima de alguém.",
 			"sfx": "nature",
 		},
 		"paralysis": {
@@ -159,12 +203,14 @@ static func build() -> Dictionary:
 		},
 		"powerAttack": {
 			"name": "Ataque Poderoso", "icon": "💪", "kind": "power-attack", "ctCost": 0,
-			"mpCost": 4, "damageBonus": 3, "critBonus": 0.15, "targetMode": "self",
-			"tooltipNote": "Soma +3 de dano e +15% de chance de crítico ao seu próximo ataque neste turno.",
+			"mpCost": 4, "damageBonus": 5, "critBonus": 0.10, "targetMode": "self",
+			"tooltipNote": "Soma +5 de dano e +10% de chance de crítico ao seu próximo ataque neste turno.",
 			"sfx": "melee",
 		},
 		"throwSword": {
-			"name": "Arremessar Espada", "icon": "🗡️", "ctCost": 50, "mpCost": 3,
+			# Pedido do usuário: ícone próprio (era o mesmo 🗡️ da Espada,
+			# escondendo que são 2 ataques diferentes do Guerreiro).
+			"name": "Arremessar Espada", "icon": "⚔️", "ctCost": 50, "mpCost": 3,
 			"damageMin": 8, "damageMax": 10, "critMultiplier": 2, "hitChance": 0.8,
 			"minRange": 1, "maxRange": 3, "cardinalOnly": true, "targetMode": "enemy",
 			"projectile": "blade",
@@ -179,7 +225,8 @@ static func build() -> Dictionary:
 			"sfx": "melee",
 		},
 		"defend": {
-			"name": "Defender", "icon": "🛡️", "kind": "defend", "ctCost": 0, "mpCost": 1,
+			# Pedido do usuário: ícone próprio (era o mesmo 🛡️ do Escudo).
+			"name": "Defender", "icon": "🧱", "kind": "defend", "ctCost": 0, "mpCost": 1,
 			"turns": 3, "targetMode": "self",
 			"tooltipNote": "Reduz o dano recebido em 2 nos próximos 3 turnos.",
 			"sfx": "melee",
@@ -191,10 +238,20 @@ static func build() -> Dictionary:
 			"sfx": "ranged",
 		},
 		"longShot": {
-			"name": "Tiro Longo", "icon": "🏹", "kind": "long-shot", "ctCost": 0, "mpCost": 3,
+			# Pedido do usuário: ícone próprio (era o mesmo 🏹 do Arco, da Chuva
+			# de Flechas e do Tiro Penetrante — as 4 habilidades do Arqueiro
+			# ficavam indistinguíveis no menu).
+			"name": "Tiro Longo", "icon": "🔭", "kind": "long-shot", "ctCost": 0, "mpCost": 3,
 			"targetMode": "self",
 			"tooltipNote": "Dobra o alcance do seu próximo ataque neste turno.",
 			"sfx": "ranged",
+		},
+		"arrowRain": {
+			# Pedido do usuário: ícone próprio (mesma duplicação do Tiro Longo
+			# acima).
+			"name": "Chuva de flechas", "icon": "🌧️", "kind": "arrow-rain", "ctCost": 0, "mpCost": 5,
+			"targetMode": "self", "sfx": "ranged",
+			"tooltipNote": "Prepara o próximo ataque de arco em 3 × 3 quadrados. Combina com outros modificadores; Tiro Rápido mantém a chuva no disparo extra. Custa 5 MP uma vez; o disparo mantém seu CT. Não acumula consigo mesma.",
 		},
 		"fireArrow": {
 			"name": "Flecha de Fogo", "icon": "🔥", "kind": "fire-arrow", "ctCost": 0, "mpCost": 3,
@@ -215,7 +272,9 @@ static func build() -> Dictionary:
 			"sfx": "frostWandZapSpd",
 		},
 		"pierceShot": {
-			"name": "Tiro Penetrante", "icon": "🏹", "ctCost": 60, "mpCost": 3,
+			# Pedido do usuário: ícone próprio (mesma duplicação do Tiro Longo
+			# acima).
+			"name": "Tiro Penetrante", "icon": "➡️", "ctCost": 60, "mpCost": 3,
 			"damageMin": 4, "damageMax": 8, "critMultiplier": 3, "critChance": 0.15,
 			# Sem teto de alcance próprio: maxRange = toda a extensão do
 			# tabuleiro — quem realmente limita o alcance é a borda do mapa
@@ -232,7 +291,10 @@ static func build() -> Dictionary:
 			"sfx": "ranged",
 		},
 		"agility": {
-			"name": "Agilidade", "icon": "🌀", "kind": "haste-attack", "ctCost": 0, "mpCost": 4,
+			# Pedido do usuário: ícone próprio (era o mesmo 🌀 da Funda, a arma
+			# do Goblin) — mesmo ícone do Tiro Rápido do Arqueiro, já que é a
+			# mesma habilidade (kind "haste-attack") reaproveitada.
+			"name": "Agilidade", "icon": "💨", "kind": "haste-attack", "ctCost": 0, "mpCost": 4,
 			"targetMode": "self",
 			"tooltipNote": "Permite atacar mais uma vez neste turno.",
 			"sfx": "melee",
@@ -326,6 +388,35 @@ static func build() -> Dictionary:
 		# Pedido do usuário: Bomba de Gelo idêntica à Bomba (mesmo custo,
 		# dano, alcance e área), trocando só o efeito — reduz agilidade em
 		# vez de queimar, mesmo efeito do Raio de Gelo (weapons.gd:"iceRay").
+		"poisonPotion": {
+			"name": "Poção Venenosa", "kind": "poison-potion", "ctCost": 50, "mpCost": 5,
+			"targetMode": "self", "tooltipNote": "Prepara o próximo ataque de Funda ou Adaga para aplicar Veneno por 3 turnos.", "sfx": "poison",
+		},
+		"lowBlow": {
+			"name": "Golpe Baixo", "kind": "low-blow", "ctCost": 50, "mpCost": 2, "damageMin": 1, "damageMax": 1,
+			"targetMode": "self", "tooltipNote": "Próximo ataque de Funda ou Adaga causa dano normal e aplica -20% de acerto.", "sfx": "melee",
+		},
+		"sandInEyes": {
+			"name": "Areia nos Olhos", "kind": "sand-in-eyes", "ctCost": 20, "mpCost": 3, "damageMin": 0, "damageMax": 0,
+			"targetMode": "self", "tooltipNote": "Próximo ataque de Funda ou Adaga aplica -10% de acerto e -1 de alcance à distância.", "sfx": "nature",
+		},
+		"hitAndRun": {
+			"name": "Bater e Correr", "kind": "hit-and-run", "ctCost": 0, "mpCost": 1, "targetMode": "self",
+			"tooltipNote": "Após acertar, permite mover novamente ou concede 2 quadrados extras.", "sfx": "melee",
+		},
+		"goblinAmbush": {
+			"name": "Emboscada Goblin", "kind": "power-attack", "ctCost": 10, "mpCost": 2, "damageBonus": 2, "critBonus": 0.1,
+			"targetMode": "self", "tooltipNote": "Próximo ataque: +2 dano e +10% crítico.", "sfx": "melee",
+		},
+		"stolenBarrel": {
+			"name": "Barril Roubado", "kind": "line-aoe", "ctCost": 50, "mpCost": 4, "damageMin": 4, "damageMax": 8,
+			"critMultiplier": 1, "critChance": 0, "hitChance": 0.8, "minRange": 1, "maxRange": GameConstants.BOARD_SIZE - 1,
+			"targetMode": "line-aoe", "tooltipNote": "Atinge todos em uma linha, causando 4-8 de dano.", "sfx": "melee",
+		},
+		"playDead": {
+			"name": "Fingir de Morto", "kind": "play-dead", "ctCost": 0, "mpCost": 5, "targetMode": "self", "turns": 1,
+			"tooltipNote": "Fica intocável por ataques diretos e de área neste turno.", "sfx": "nature",
+		},
 		"iceBomb": {
 			"name": "Bomba de Gelo", "icon": "🧊", "ctCost": 50, "mpCost": 5,
 			"damageMin": 4, "damageMax": 8, "critMultiplier": 1, "critChance": 0, "hitChance": 1,
@@ -343,7 +434,9 @@ static func build() -> Dictionary:
 		# de agilidade que Raio de Gelo/Bomba de Gelo já aplicam (weapons.gd:
 		# "iceRay", spells.gd:"iceBomb") — não uma queimadura contínua nova.
 		"iceCone": {
-			"name": "Cone de Gelo", "icon": "🧊", "kind": "cone-ice", "ctCost": 50, "mpCost": 10,
+			# Pedido do usuário: ícone próprio (era o mesmo 🧊 do Raio de Gelo,
+			# a outra magia de gelo da Maga).
+			"name": "Cone de Gelo", "icon": "❄️", "kind": "cone-ice", "ctCost": 50, "mpCost": 10,
 			"damageMin": 5, "damageMax": 10, "damageType": "ice", "critMultiplier": 1, "critChance": 0,
 			"hitChance": 0.8, "minRange": 1, "maxRange": 5, "targetMode": "cone-ice",
 			"appliesSpeedReduction": {"turns": 2, "amount": 1},
@@ -371,6 +464,199 @@ static func build() -> Dictionary:
 			"tooltipNote": "Move até 4 quadrados em linha reta cardeal, atropelando todo inimigo no caminho sem parar: 80% de acerto, 0% de crítico, tira 20 de CT e reduz o deslocamento em 1 por 1 turno de quem for atingido.",
 			"sfx": "melee",
 		},
+		# --- Habilidades do Monge (pedido do usuário) ----------------------
+		# Foco: mesma família das posturas defensivas já existentes (Defender
+		# do Guerreiro, kind "defend"), só que em vez de reduzir o dano em 2
+		# ele ANULA ataque físico e corta magia pela metade (ver o bloco
+		# "focus" em GameState.resolve_single_hit). Ação livre (ctCost 0,
+		# finish_free_self_action) igual ao Defender, então o Monge ainda
+		# pode mover/atacar no mesmo turno. turns 1 usa o idioma do Pés
+		# Ágeis/Forma de Morcego: aplicado durante o próprio turno e
+		# decrementado só quando o MESMO Monge começa o turno seguinte, ou
+		# seja, "dura o turno em que foi usada" e protege até ele voltar a
+		# agir.
+		# Rajada de Golpes (Monge): HABILIDADE (aba Habilidades). Reaproveita o
+		# campo "hits" (o mesmo do Míssil Mágico): dois golpes seguidos, cada um
+		# com acerto (80%), crítico (15%) e dano (3-6) próprios; o 2º sai mesmo
+		# que o 1º erre. Na tela o Monge ataca DUAS vezes (ver
+		# Main._play_multi_strike). damageType "physical" porque item com mpCost
+		# viraria "magic" em damage_type_of.
+		"monkFlurry": {
+			"name": "Rajada de Golpes", "icon": "🥊", "kind": "monk-flurry", "ctCost": 50, "mpCost": 3,
+			"damageMin": 3, "damageMax": 6, "hits": 2, "critMultiplier": 2, "critChance": 0.15,
+			"hitChance": 0.8, "swing": "blunt", "minRange": 1, "maxRange": 1,
+			"targetMode": "enemy", "damageType": "physical", "manualOnly": true, "spriteAction": "soco",
+			"tooltipNote": "Custa 3 MP. O Monge ataca DUAS vezes seguidas, 3-6 de dano cada, com acerto (80%) e crítico (15%) calculados separadamente. O 2º golpe acontece mesmo que o 1º erre.",
+			"sfx": "melee",
+		},
+		"monkFocus": {
+			"name": "Foco", "icon": "🧘", "kind": "monk-focus", "ctCost": 0, "mpCost": 2,
+			"turns": 1, "healAmount": 3, "manaAmount": 3, "targetMode": "self",
+			"tooltipNote": "Custa 2 MP. Bloqueia por completo todo ataque físico recebido e reduz pela metade o dano de magia até o começo do próximo turno do Monge. Recupera 3 HP e 3 MP (descontados depois do custo).",
+			"sfx": "melee",
+		},
+		# Dash: mesmo desenho da Agilidade/Tiro Rápido (kind "haste-attack",
+		# ataque bônus), só que pro MOVIMENTO — guarda um movimento extra que
+		# GameState.perform_move consome em vez de marcar hasMoved, sempre no
+		# máximo um (nunca um terceiro, ver cast_monk_dash).
+		"monkDash": {
+			"name": "Dash", "icon": "👟", "kind": "monk-dash", "ctCost": 0, "mpCost": 2,
+			"targetMode": "self",
+			"tooltipNote": "Custa 2 MP. Permite mover duas vezes neste turno; cada movimento respeita o deslocamento normal (MOV 8) e as regras de colisão/terreno de sempre. Não concede um terceiro movimento.",
+			"sfx": "melee",
+		},
+		# Chute do Dragão: alcance idêntico ao do Relâmpago da Maga (mesmo
+		# minRange/maxRange), obstrução no estilo da Flecha do Arqueiro
+		# (ignoresTerrainLineOfSight, ver weapons.gd:"bow") e empurrão/
+		# paralisia resolvidos pelos campos genéricos que resolve_single_hit
+		# já entende (knockback/appliesParalyzed, mesmos usados por Cauda do
+		# Dragão Vermelho e pelo Choque da Fada). O voo até o alvo mora em
+		# GameState.cast_dragon_kick.
+		"dragonKick": {
+			"name": "Chute do Dragão", "icon": "🐉", "kind": "dragon-kick", "ctCost": 60, "mpCost": 8,
+			"damageMin": 5, "damageMax": 20, "critMultiplier": 2, "hitChance": 0.8,
+			"minRange": 1, "maxRange": GameConstants.BOARD_SIZE - 1,
+			"damageType": "physical", "targetMode": "dragon-kick",
+			"ignoresTerrainLineOfSight": true,
+			"knockback": {"distance": 2}, "appliesParalyzed": {"turns": 1},
+			"spriteAction": "chute",
+			"tooltipNote": "Custa 8 MP. Escolha um lugar em linha reta (horizontal, vertical ou diagonal, como o Relâmpago) dentro do mesmo alcance dele: o Monge voa até lá e chuta, causando 5-20 de dano. Não precisa de linha de visão livre. Quem for atingido é empurrado 2 quadrados na direção do golpe e fica paralisado por 1 turno.",
+			"sfx": "melee",
+		},
+		# Meditar: mesma receita da Troca de Pele da Cobra (cura + limpeza de
+		# status negativos) somada ao status "regen" já existente — os
+		# valores da Regeneração são copiados da Regeneração em Área logo
+		# depois de montar este dicionário (ver o final de build()), então
+		# nunca saem de sincronia com ela. Consome a ação do turno
+		# (ctCost > 0, finalize_action), igual às outras curas do jogo.
+		"monkMeditate": {
+			"name": "Meditar", "icon": "☯️", "kind": "monk-meditate", "ctCost": 45, "mpCost": 5,
+			"healMin": 5, "healMax": 10, "targetMode": "self",
+			"tooltipNote": "Custa 5 MP. Remove todos os status negativos do Monge, cura 5-10 de HP e aplica Regeneração (mesmo valor por turno e mesma duração da Regeneração em Área).",
+			"sfx": "heal",
+		},
+		# --- Habilidades do Samurai (pedido do usuário) --------------------
+		# Todo golpe de espada declara damageType "physical" (damage_type_of
+		# trataria qualquer item com mpCost como "magic") e "usesSword": o
+		# Saque Rápido só potencializa golpes de espada (ver
+		# GameState.resolve_single_hit). "manualOnly" tira estas habilidades
+		# do atalho do tile vermelho (get_attack_options): elas custam MP e só
+		# devem sair pelo menu Habilidades, nunca por um clique de atalho.
+		"samuraiDualWield": {
+			"name": "Empunhadura Dupla", "icon": "⚔️", "ctCost": 50, "mpCost": 4,
+			"damageMin": 12, "damageMax": 24, "critMultiplier": 2, "critChance": 0.15,
+			"hitChance": 0.8, "swing": "slash", "minRange": 1, "maxRange": 1,
+			"targetMode": "enemy", "damageType": "physical", "usesSword": true, "manualOnly": true,
+			"tooltipNote": "Golpe de espada com o dobro do dano normal (12-24, antes do crítico). 80% de acerto e 15% de crítico, como a Espada.",
+			"sfx": "melee",
+		},
+		# Saque Rápido: custo de MP/CT e bônus copiados do Tiro Certeiro no
+		# fim de build() — nunca divergem dele.
+		"samuraiQuickDraw": {
+			"name": "Saque Rápido", "icon": "🗡️", "kind": "quick-draw", "targetMode": "self",
+			"tooltipNote": "Seu próximo golpe de espada neste turno tem 100% de acerto e +10% de chance de crítico. Só vale para a espada (não para o Arco).",
+			"sfx": "melee",
+		},
+		# Meditar do Samurai: mesma habilidade do Monge (kind "monk-meditate",
+		# mesma função), só com o custo pedido: 5 MP / CT 60. Os valores da
+		# Regeneração vêm de regenAoe no fim de build().
+		"samuraiMeditate": {
+			"name": "Meditar", "icon": "☯️", "kind": "monk-meditate", "ctCost": 60, "mpCost": 5,
+			"healMin": 5, "healMax": 10, "targetMode": "self",
+			"tooltipNote": "Custa 5 MP. Remove todos os status negativos do Samurai, cura 5-10 de HP e aplica Regeneração (mesmo valor por turno e mesma duração da Regeneração em Área).",
+			"sfx": "heal",
+		},
+		# Corte Iaijutsu: reaproveita a mira da Investida do Orc (targetMode
+		# "charge" ~ linha reta cardeal até o primeiro inimigo), mas com o
+		# próprio resolvedor (respeita terreno/elevação/ocupantes). Avança até
+		# 2 quadrados e corta o alvo colado: alcance de mira 3 ("reach"); o golpe em
+		# si é corpo a corpo (maxRange 1), sem a penalidade de tiro à queima-roupa.
+		"samuraiIaijutsu": {
+			"name": "Corte Iaijutsu", "icon": "💨", "kind": "iaijutsu", "ctCost": 70, "mpCost": 4,
+			"damageMin": 5, "damageMax": 10, "critMultiplier": 2, "critChance": 0.15,
+			"hitChance": 0.8, "swing": "slash", "minRange": 1, "maxRange": 1, "reach": 3, "advanceMax": 2,
+			"targetMode": "iaijutsu", "damageType": "physical", "usesSword": true,
+			"firstStrikeCritBonus": 0.2,
+			"tooltipNote": "Avança até 2 quadrados em linha reta (não atravessa obstáculos nem unidades) e corta o primeiro inimigo à frente: 5-10 de dano. Se o alvo ainda não agiu nesta rodada, +20 pontos percentuais de chance de crítico.",
+			"sfx": "melee",
+		},
+		"samuraiHeronStance": {
+			"name": "Postura da Garça", "icon": "🦢", "kind": "heron-stance", "ctCost": 40, "mpCost": 3,
+			"turns": 1, "evasionBonus": 0.25, "counterMin": 5, "counterMax": 8, "targetMode": "self",
+			"tooltipNote": "Até o próximo turno do Samurai: +25% de esquiva. Ao esquivar de um ataque corpo a corpo, contra-ataca o agressor causando 5-8 de dano.",
+			"sfx": "melee",
+		},
+		"samuraiGuardBreak": {
+			"name": "Quebra-Guarda", "icon": "🛡️", "kind": "guard-break", "ctCost": 50, "mpCost": 3,
+			"damageMin": 5, "damageMax": 8, "critMultiplier": 2, "critChance": 0.15,
+			"hitChance": 0.8, "swing": "blunt", "minRange": 1, "maxRange": 1,
+			"targetMode": "enemy", "damageType": "physical", "usesSword": true, "manualOnly": true,
+			"appliesGuardBroken": {"turns": 2},
+			"tooltipNote": "5-8 de dano e Guarda Quebrada por 2 turnos: cada ataque que acertar o alvo causa +1 de dano. Usar de novo renova a duração, sem acumular o bônus.",
+			"sfx": "melee",
+		},
+		"samuraiCrescentSlash": {
+			"name": "Corte Crescente", "icon": "🌙", "kind": "crescent-slash", "ctCost": 80, "mpCost": 5,
+			"damageMin": 6, "damageMax": 10, "critMultiplier": 2, "critChance": 0.15,
+			"hitChance": 0.8, "swing": "slash", "minRange": 1, "maxRange": 1,
+			"targetMode": "crescent-arc", "damageType": "physical",
+			"tooltipNote": "Escolha uma direção: o arco atinge os 3 quadrados à frente (o da frente e os dois ao lado dele), 6-10 de dano em cada inimigo. A área aparece antes de confirmar.",
+			"sfx": "melee",
+		},
+		"samuraiWindSlash": {
+			"name": "Corte do Vento", "icon": "🌪️", "kind": "wind-slash", "ctCost": 60, "mpCost": 4,
+			"damageMin": 7, "damageMax": 10, "critMultiplier": 2, "critChance": 0.15,
+			"hitChance": 0.8, "minRange": 1, "maxRange": 4, "cardinalOnly": true, "requiresClearPath": true,
+			"targetMode": "enemy", "damageType": "physical", "projectile": "wind-blade", "manualOnly": true,
+			"tooltipNote": "Lança um corte de espada em linha reta (4 direções) até 4 quadrados: 7-10 de dano no primeiro alvo do caminho.",
+			"sfx": "melee",
+		},
+		# Só com menos de 40% do HP máximo (15 HP ou menos com HP 40).
+		"samuraiLastResolve": {
+			"name": "Última Determinação", "icon": "⛩️", "kind": "last-resolve", "ctCost": 50, "mpCost": 5,
+			"damageMin": 10, "damageMax": 15, "critMultiplier": 2, "critChance": 0.15,
+			"hitChance": 0.8, "swing": "slash", "minRange": 1, "maxRange": 1,
+			"targetMode": "enemy", "damageType": "physical", "usesSword": true, "manualOnly": true,
+			"requiresHpBelowRatio": 0.4, "restoresMpOnKill": 3,
+			"tooltipNote": "Só pode ser usada com menos de 40% do HP máximo (15 HP ou menos). 10-15 de dano; se derrotar o alvo, recupera 3 MP.",
+			"sfx": "melee",
+		},
+		# --- Habilidades da Vestruz (pedido do usuário) --------------------
+		"vestruzKick": {
+			"name": "Coice Veloz", "icon": "🦶", "kind": "vestruz-kick", "ctCost": 50, "mpCost": 0,
+			"damageMin": 5, "damageMax": 9, "critMultiplier": 2, "critChance": 0.15,
+			"hitChance": 0.8, "swing": "blunt", "minRange": 1, "maxRange": 1,
+			"targetMode": "enemy", "damageType": "physical", "manualOnly": true,
+			"knockback": {"distance": 1},
+			"tooltipNote": "Ataque corpo a corpo: 5-9 de dano e empurra o alvo 1 quadrado (para na borda do mapa ou em quem estiver atrás).",
+			"sfx": "melee",
+		},
+		# Disparada: corre até 4 quadrados em linha reta por espaços livres e, se
+		# parar adjacente a um inimigo, dá uma trombada (damageMin/Max abaixo).
+		"vestruzDash": {
+			"name": "Disparada", "icon": "🏃", "kind": "vestruz-dash", "ctCost": 60, "mpCost": 3,
+			"damageMin": 4, "damageMax": 7, "critMultiplier": 2, "critChance": 0.15,
+			"hitChance": 0.8, "swing": "blunt", "minRange": 1, "maxRange": 1, "reach": 4,
+			"targetMode": "vestruz-dash", "damageType": "physical",
+			"tooltipNote": "Corre até 4 quadrados em linha reta por espaços livres (leva o cavaleiro junto). Se terminar adjacente a um inimigo, dá uma trombada de 4-7 de dano nele (o da frente tem prioridade).",
+			"sfx": "melee",
+		},
+		"vestruzDust": {
+			"name": "Nuvem de Poeira", "icon": "🌫️", "kind": "dust-cloud", "ctCost": 70, "mpCost": 4,
+			"areaRadius": 1, "accuracyDown": 0.2,
+			"targetMode": "dust-square",
+			"tooltipNote": "Poeira em área 3x3 centrada na Vestruz: todo inimigo atingido perde 20 pontos percentuais de chance de acerto por 1 turno (o próximo turno dele).",
+			"sfx": "nature",
+		},
+		# Cura da Vestruz: healMin/healMax/hitChance copiados da Poção de Cura do
+		# Químico (fim de build()) — mesmo efeito, mas só nela mesma e nos aliados
+		# dos 4 quadrados cardeais (a área em losango de raio 1: sem diagonais).
+		"vestruzHeal": {
+			"name": "Cura da Vestruz", "icon": "💚", "kind": "vestruz-heal", "ctCost": 50, "mpCost": 4,
+			"areaRadius": 1, "targetMode": "heal-cross",
+			"tooltipNote": "Cura a própria Vestruz (e o cavaleiro montado) e cada aliado nos 4 quadrados cardeais adjacentes, 5-10 de HP. Não cura quem está nas diagonais.",
+			"sfx": "heal",
+		},
 		"bardSongHeal": {
 			"name":"Canção da Cura", "icon":"🎵", "kind":"bard-song-heal", "songKind":"heal",
 			"ctCost":50, "mpCost":10, "hitChance":0.8, "applications":3, "targetMode":"self",
@@ -388,4 +674,40 @@ static func build() -> Dictionary:
 			"ctCost":50, "mpCost":10, "hitChance":0.8, "applications":3, "targetMode":"self",
 			"tooltipNote":"Global. Três aplicações; teste individual de 80% por inimigo vivo a cada aplicação. Sucesso: -3 HP e -1 MP, usando a morte normal.", "sfx":"arcane"},
 	}
+	# Identidade visual/sonora das novas técnicas do Goblin.
+	spells["lowBlow"]["sfx"] = "goblinLowBlow"
+	spells["lowBlow"]["swing"] = "goblin-low-blow"
+	spells["poisonPotion"]["sfx"] = "goblinPoison"
+	spells["poisonPotion"]["projectileKind"] = "goblin-poison-potion"
+	spells["poisonPotion"]["burstKind"] = "poison"
+	spells["sandInEyes"]["sfx"] = "goblinSand"
+	spells["sandInEyes"]["projectileKind"] = "goblin-sand"
+	spells["sandInEyes"]["burstKind"] = "goblin-sand"
+	spells["hitAndRun"]["sfx"] = "goblinDash"
+	spells["hitAndRun"]["animationKind"] = "goblin-dash"
+	spells["goblinAmbush"]["sfx"] = "goblinAmbush"
+	spells["goblinAmbush"]["animationKind"] = "goblin-ambush"
+	spells["stolenBarrel"]["sfx"] = "goblinBarrel"
+	spells["stolenBarrel"]["projectileKind"] = "goblin-barrel"
+	spells["stolenBarrel"]["burstKind"] = "goblin-barrel"
+	spells["playDead"]["sfx"] = "goblinPlayDead"
+	spells["playDead"]["animationKind"] = "goblin-feign"
+	# Meditar (Monge) reaproveita LITERALMENTE o status Regeneração já
+	# existente: valor por turno e duração vêm da Regeneração em Área, em vez
+	# de números próprios que poderiam divergir dela depois.
+	spells["monkMeditate"]["regenHealMin"] = spells["regenAoe"]["healMin"]
+	spells["monkMeditate"]["regenHealMax"] = spells["regenAoe"]["healMax"]
+	spells["monkMeditate"]["regenTurns"] = spells["regenAoe"]["regenTurns"]
+	# Samurai: Saque Rápido = Tiro Certeiro (custo de MP, CT e bônus de
+	# crítico copiados); Meditar = mesma Regeneração do Monge/Regeneração em Área.
+	spells["samuraiQuickDraw"]["mpCost"] = spells["trueShot"]["mpCost"]
+	spells["samuraiQuickDraw"]["ctCost"] = spells["trueShot"]["ctCost"]
+	spells["samuraiQuickDraw"]["critBonus"] = spells["trueShot"]["critBonus"]
+	spells["samuraiMeditate"]["regenHealMin"] = spells["regenAoe"]["healMin"]
+	spells["samuraiMeditate"]["regenHealMax"] = spells["regenAoe"]["healMax"]
+	spells["samuraiMeditate"]["regenTurns"] = spells["regenAoe"]["regenTurns"]
+	# Vestruz: a cura é a MESMA da Poção de Cura do Químico.
+	spells["vestruzHeal"]["healMin"] = spells["healPotion"]["healMin"]
+	spells["vestruzHeal"]["healMax"] = spells["healPotion"]["healMax"]
+	spells["vestruzHeal"]["hitChance"] = spells["healPotion"]["hitChance"]
 	return spells

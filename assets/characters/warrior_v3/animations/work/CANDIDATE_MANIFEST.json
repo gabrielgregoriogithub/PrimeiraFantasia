@@ -1,0 +1,75 @@
+{
+  "CombatIdle": {
+    "source": "Idle_Shield_Loop",
+    "library": 2,
+    "duration": 2.5,
+    "loop": true,
+    "status": "UNAPPROVED_RETARGET_BASE",
+    "impact_time": null,
+    "modifications": [
+      "left shield grip fit: LeftHand/LeftArm/LeftForeArm blended 0.85"
+    ]
+  },
+  "Walk": {
+    "source": "Walk_Loop",
+    "library": 1,
+    "duration": 1.3333333333333333,
+    "loop": true,
+    "status": "UNAPPROVED_RETARGET_BASE",
+    "impact_time": null,
+    "modifications": []
+  },
+  "Attack_Slash": {
+    "source": "Sword_Regular_A_Rec",
+    "library": 2,
+    "duration": 0.9666666666666667,
+    "loop": false,
+    "status": "UNAPPROVED_RETARGET_BASE",
+    "impact_time": null,
+    "modifications": [
+      "left shield grip fit: LeftHand/LeftArm/LeftForeArm blended 0.85"
+    ]
+  },
+  "Attack_Chop": {
+    "source": "Sword_Attack",
+    "library": 1,
+    "duration": 1.5333333333333334,
+    "loop": false,
+    "status": "UNAPPROVED_RETARGET_BASE",
+    "impact_time": null,
+    "modifications": [
+      "left shield grip fit: LeftHand/LeftArm/LeftForeArm blended 0.85"
+    ]
+  },
+  "Shield_Bash": {
+    "source": "Shield_Dash",
+    "library": 2,
+    "duration": 1.1,
+    "loop": false,
+    "status": "UNAPPROVED_RETARGET_BASE",
+    "impact_time": null,
+    "modifications": [
+      "left shield grip fit: LeftHand/LeftArm/LeftForeArm blended 0.70"
+    ]
+  },
+  "Hit": {
+    "source": "Hit_Chest",
+    "library": 1,
+    "duration": 0.3333333333333333,
+    "loop": false,
+    "status": "UNAPPROVED_RETARGET_BASE",
+    "impact_time": null,
+    "modifications": [
+      "left shield grip fit: LeftHand/LeftArm/LeftForeArm blended 0.85"
+    ]
+  },
+  "Death": {
+    "source": "Death01",
+    "library": 1,
+    "duration": 2.4,
+    "loop": false,
+    "status": "UNAPPROVED_RETARGET_BASE",
+    "impact_time": null,
+    "modifications": []
+  }
+}

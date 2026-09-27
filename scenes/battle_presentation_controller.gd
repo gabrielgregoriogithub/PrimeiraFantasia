@@ -66,14 +66,19 @@ func skip() -> void:
 	_cancel_tweens()
 	_finish_intro()
 
-func present_event(heading: String, text: String, targets: Array = [], cinematic := false) -> void:
+## `hold` (segundos que o card fica exposto) é opcional — pedido do usuário
+## pro evento de vento gelado do DESFILADEIRO precisar de uma pausa mais
+## longa (~3s) que o padrão de 0.55s já usado por present_reinforcements/
+## outros avisos rápidos; qualquer chamador que não passar `hold` continua
+## exatamente como antes.
+func present_event(heading: String, text: String, targets: Array = [], cinematic := false, hold: float = 0.55) -> void:
 	if active or phase != Phase.COMBAT: return
 	if board != null and not board.acquire_camera("battle_presentation", 30): return
 	active = true
 	_generation += 1
 	var run := _generation
 	_capture_camera()
-	_run_event(run, heading, text, targets, cinematic)
+	_run_event(run, heading, text, targets, cinematic, hold)
 
 func present_reinforcements(tokens: Array) -> void:
 	if tokens.is_empty(): return
@@ -158,11 +163,11 @@ func _run_intro(run: int, scenario: Dictionary, heroes: Array, enemies: Array, o
 	await _show_card("", "BATALHA!", "", 0.32, true)
 	if run == _generation: _finish_intro()
 
-func _run_event(run: int, heading: String, text: String, targets: Array, cinematic: bool) -> void:
+func _run_event(run: int, heading: String, text: String, targets: Array, cinematic: bool, hold: float = 0.55) -> void:
 	if cinematic: _set_letterbox(true)
 	if not targets.is_empty(): await _camera_to(frame_targets(targets, 110.0, 1.08), 0.34)
 	if run != _generation: return
-	await _show_card(heading, text, "", 0.55)
+	await _show_card(heading, text, "", hold)
 	if run != _generation: return
 	await _restore_camera(0.30)
 	_set_letterbox(false)
@@ -354,7 +359,7 @@ func _build_overlay() -> void:
 	_card.custom_minimum_size = Vector2(430, 0)
 	_card.pivot_offset = Vector2(215, 55)
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color("e8d3a3e8"); style.border_color = Color("76502c"); style.set_border_width_all(3); style.set_corner_radius_all(12)
+	style.bg_color = Color("e8d3a3"); style.border_color = Color("76502c"); style.set_border_width_all(3); style.set_corner_radius_all(12)
 	style.content_margin_left = 26; style.content_margin_right = 26; style.content_margin_top = 14; style.content_margin_bottom = 16
 	_card.add_theme_stylebox_override("panel", style)
 	center.add_child(_card)

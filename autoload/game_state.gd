@@ -58,6 +58,14 @@ var village_archer_spawned := false
 var village_goblin_spawned := false
 var forest_chemist_spawned := false
 var forest_shaman_spawned := false
+## DESFILADEIRO (ver maybe_trigger_desfiladeiro_wind): último global_turn_count
+## em que o vento gelado já disparou (evita disparo duplo no mesmo turno,
+## mesmo padrão de village_archer_spawned/village_goblin_spawned acima) e a
+## fila de eventos que a camada visual (main.gd:_sync_visuals) drena pra
+## mostrar a pausa/rajada — mesmo mecanismo de bone_explosion_events/
+## bard_song_vfx_events logo abaixo.
+var desfiladeiro_wind_last_turn: int = -1
+var desfiladeiro_wind_events: Array = []
 ## Preenchido por _release_caged_mage() a cada libertação da Maga (ver
 ## _setup_caged_mage/_check_cage_release); main.gd lê e limpa a cada
 ## _sync_visuals() pra disparar popup/som/refresh sem acoplar UI ao estado.
@@ -112,6 +120,7 @@ func reset() -> void:
 	battle_ended = false
 	battle_won = false
 	global_turn_count = 0
+	graveyard_spawn_count = 0
 	event_log = []
 	current_actor = null
 	round_acted_units = []
@@ -164,6 +173,18 @@ func apply_scenario(definition: Dictionary) -> void:
 	if scenario_id == ScenarioManager.FOREST:
 		_setup_forest(definition)
 		return
+	if scenario_id == ScenarioManager.PORTO:
+		_setup_porto(definition)
+		return
+	if scenario_id == ScenarioManager.DESFILADEIRO:
+		_setup_desfiladeiro(definition)
+		return
+	if scenario_id == ScenarioManager.ESTRADA_INVERNO:
+		_setup_estrada_inverno(definition)
+		return
+	if scenario_id in [ScenarioManager.TEMPLO, ScenarioManager.CEMITERIO]:
+		_setup_haunted_scenery(definition)
+		return
 	if scenario_id in [ScenarioManager.TOWER_FLOOR_2, ScenarioManager.TOWER_FLOOR_3, ScenarioManager.TOWER_FLOOR_4]:
 		_setup_dungeon_floor(definition)
 		return
@@ -182,6 +203,17 @@ func apply_scenario(definition: Dictionary) -> void:
 
 const PVP_DUNGEON_MONSTER_KINDS := ["zombie", "ghost", "skeleton", "living_fire", "lava_human", "salamander", "flame_demon", "vampire", "lich", "dragon"]
 const PVP_LUA_MONSTER_KINDS := ["rat", "slime", "snake", "gnoll", "goo"]
+## Os 33 Guardians (ver data/guardian_monsters.gd) — lista literal espelhando
+## GuardianMonsters.keys() pra seguir o mesmo padrão de const das duas linhas
+## acima (GDScript não permite inicializar const com chamada de função).
+const PVP_GUARDIAN_MONSTER_KINDS := [
+	"fordin", "stegofor", "brachifor", "kroki", "krokivip", "leviadile",
+	"devidin", "devidra", "deviraptor", "aerodin", "aerodeer", "aerostag",
+	"weastoat", "mooty", "camoon", "moopard", "wuppy", "earog", "deemog",
+	"dradder", "driper", "spreye", "buttereye", "duggot", "breem",
+	"marvillar", "marvantis", "palmpot", "bonsot", "erimat", "erichief",
+	"eggatch", "owlock",
+]
 
 ## Pedido do usuário: alguns "chefes" de masmorra (HP calibrado pra campanha,
 ## enfrentado sozinho ou com pouca gente) ficam desbalanceados quando
@@ -189,10 +221,30 @@ const PVP_LUA_MONSTER_KINDS := ["rat", "slime", "snake", "gnoll", "goo"]
 ## no resto do kit (armas/magias/IA continuam as mesmas). Único ponto de
 ## ajuste pra esse tipo de rebalanceamento: novos overrides entram aqui, não
 ## como `if pvp_custom_battle` espalhado pelas funções de dados dos monstros.
-## Correção do usuário: o Slime Negro (goo) fica de fora — mantém os mesmos
-## 200 HP/divisão do Modo História também no PVP.
+## Pedido do usuário (revisado): Slime Negro (goo) agora TEM escala própria
+## no PVP também — 80 HP em vez dos 200 da campanha (ver
+## _check_black_slime_split pro limiar/HP dos filhos, que escala junto).
 const PVP_MONSTER_STAT_OVERRIDES := {
-	"salamander": {"hp": 80, "maxHp": 80},
+	# Pedido do usuário (revisado): Elementais do Fogo com HP próprio no PVP
+	# — bem abaixo do padrão de campanha, que os deixava fora de escala
+	# contra um time de 5 heróis (ver diagnóstico de balanceamento).
+	"salamander": {"hp": 60, "maxHp": 60},
+	"dragon": {"hp": 70, "maxHp": 70},
+	"lava_human": {"hp": 50, "maxHp": 50},
+	"goo": {"hp": 100, "maxHp": 100},
+	# Pedido do usuário: Troll e Orc com HP próprio no PVP, mais baixo que o
+	# padrão da campanha (50/40).
+	"troll": {"hp": 50, "maxHp": 50},
+	"orc": {"hp": 40, "maxHp": 40},
+	# Pedido do usuário: no PVP, os "figurantes" do Vale da Lua (Rato/Slime/
+	# Cobra/Gnoll) dobram de HP e ganham +2 de dano em cada ataque — eram HP/
+	# dano baixo demais pra sobreviver ou ameaçar um time de 5 escolhido pelo
+	# jogador (ver diagnóstico de balanceamento). Armas duplicadas de
+	# _tower_creature_templates só com damageMin/damageMax +2.
+	"rat": {"hp": 20, "maxHp": 20, "speed": 11, "weapons": [{"name":"Mordida","icon":"🦷","ctCost":50,"damageMin":5,"damageMax":7,"critMultiplier":1,"critChance":0.0,"hitChance":0.7,"minRange":1,"maxRange":1,"sfx":"melee","swing":"stab"}]},
+	"slime": {"hp": 25, "maxHp": 25, "speed": 12, "weapons": [{"name":"Pancada","icon":"💥","ctCost":50,"damageMin":6,"damageMax":8,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":1,"maxRange":1,"sfx":"melee","swing":"crush"}]},
+	"snake": {"hp": 25, "maxHp": 25, "speed": 12, "weapons": [{"name":"Picada","icon":"🐍","ctCost":50,"damageMin":5,"damageMax":7,"critMultiplier":1,"critChance":0.0,"hitChance":0.9,"minRange":1,"maxRange":1,"appliesPoison":{"damageMin":1,"damageMax":3,"turns":3,"ctDrainPerTurn":10},"sfx":"poison","swing":"stab"}]},
+	"gnoll": {"hp": 35, "maxHp": 35, "speed": 12, "weapons": [{"name":"Lança","icon":"🔱","ctCost":50,"damageMin":7,"damageMax":10,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":1,"maxRange":1,"sfx":"melee","swing":"stab"},{"name":"Arremessar Lança","icon":"🔱","ctCost":50,"damageMin":6,"damageMax":9,"critMultiplier":1,"critChance":0.0,"hitChance":0.7,"minRange":2,"maxRange":5,"projectile":"arrow","sfx":"ranged"}]},
 }
 
 ## Monta uma partida do Modo PVP: reaproveita o terreno/visual de qualquer um
@@ -221,6 +273,8 @@ func apply_pvp_scenario(definition: Dictionary, hero_keys: Array, monster_keys: 
 			spawned = _spawn_dungeon_enemy(key, i + 1, {"x": 0, "y": 0})
 		elif key in PVP_LUA_MONSTER_KINDS:
 			spawned = _spawn_lua_monster(key, i + 1, {"x": 0, "y": 0})
+		elif key in PVP_GUARDIAN_MONSTER_KINDS:
+			spawned = _spawn_guardian_monster(key, i + 1, {"x": 0, "y": 0})
 		else:
 			var monster: Dictionary = (templates[key] as Dictionary).duplicate(true)
 			units.append(monster)
@@ -229,6 +283,8 @@ func apply_pvp_scenario(definition: Dictionary, hero_keys: Array, monster_keys: 
 		if PVP_MONSTER_STAT_OVERRIDES.has(key) and not spawned.is_empty():
 			for stat_key in PVP_MONSTER_STAT_OVERRIDES[key]:
 				spawned[stat_key] = PVP_MONSTER_STAT_OVERRIDES[key][stat_key]
+		if key in ["rat", "snake", "gnoll", "slime"] and not spawned.is_empty():
+			_add_creature_ranged_attack(spawned, key)
 		# Pedido do usuário: sem numeração ("Vampiro 1", "Zumbi 2"...) no
 		# nome dos inimigos do PVP — o sufixo só existe em
 		# dungeon_monster_data/lua_monster_data pra desambiguar várias
@@ -238,7 +294,7 @@ func apply_pvp_scenario(definition: Dictionary, hero_keys: Array, monster_keys: 
 		# — o índice aqui é só a posição no array, não uma contagem de
 		# cópias. Espelha a mesma remoção do " 1" já feita pra ficha de
 		# seleção (ver PvpSetup._monster_template).
-		if not spawned.is_empty() and (key in PVP_DUNGEON_MONSTER_KINDS or key in PVP_LUA_MONSTER_KINDS):
+		if not spawned.is_empty() and (key in PVP_DUNGEON_MONSTER_KINDS or key in PVP_LUA_MONSTER_KINDS or key in PVP_GUARDIAN_MONSTER_KINDS):
 			var numbered_name: String = String(spawned["name"])
 			var suffix := " %d" % (i + 1)
 			if numbered_name.ends_with(suffix):
@@ -349,6 +405,27 @@ func _spawn_lua_monster(kind: String, index: int, pos: Dictionary) -> Dictionary
 		return {}
 	return spawn_unit(String(data["name"]), data)
 
+## Mesma ideia de _spawn_dungeon_enemy/_spawn_lua_monster, pros 33 Guardians
+## portados de lucidtanooki/guardian_monsters (ver data/guardian_monsters.gd
+## — dados vêm de lá, GameState só aplica índice/posição igual aos outros
+## dois caminhos).
+func _spawn_guardian_monster(kind: String, index: int, pos: Dictionary) -> Dictionary:
+	var data := guardian_monster_data(kind, index, pos)
+	if data.is_empty():
+		return {}
+	return spawn_unit(String(data["name"]), data)
+
+static func guardian_monster_data(kind: String, index: int = 1, pos: Dictionary = {"x": 0, "y": 0}) -> Dictionary:
+	var templates := GuardianMonsters.build()
+	if not templates.has(kind):
+		return {}
+	var data: Dictionary = (templates[kind] as Dictionary).duplicate(true)
+	_add_creature_ranged_attack(data, kind)
+	data["name"] = "%s %d" % [String(data["name"]), index]
+	data["x"] = int(pos["x"])
+	data["y"] = int(pos["y"])
+	return data
+
 static func lua_monster_data(kind: String, index: int = 1, pos: Dictionary = {"x": 0, "y": 0}) -> Dictionary:
 	if kind == "goo":
 		return black_slime_boss_data(pos, "Slime Negro %d" % index)
@@ -375,15 +452,24 @@ static func dungeon_monster_data(kind: String, index: int = 1, pos: Dictionary =
 	var data: Dictionary
 	match kind:
 		"zombie":
-			data = {"name":"Zombie %d" % index,"hp":20,"maxHp":20,"mp":5,"maxMp":5,"speed":9,"spriteKey":"tower_zombie","bodyColor":"#71845a","undead":true,"resurrection":{"afterTurns":3,"hpPercent":1.0,"mpPercent":1.0},"weapons":[{"name":"Pancada","damageMin":3,"damageMax":6,"hitChance":0.70,"critChance":0.15,"critMultiplier":2,"ctCost":50,"minRange":1,"maxRange":1,"damageType":"physical","appliesPoison":poison}],"spells":[]}
+			# Pedido do usuário: +10 HP em todo morto-vivo (ver também a
+			# resistência a ataque de arma em resolve_single_hit).
+			data = {"name":"Zombie %d" % index,"hp":30,"maxHp":30,"mp":5,"maxMp":5,"speed":9,"spriteKey":"tower_zombie","bodyColor":"#71845a","undead":true,"resurrection":{"afterTurns":3,"hpPercent":1.0,"mpPercent":1.0},"weapons":[{"name":"Pancada","damageMin":3,"damageMax":6,"hitChance":0.70,"critChance":0.15,"critMultiplier":2,"ctCost":50,"minRange":1,"maxRange":1,"damageType":"physical","appliesPoison":poison}],"spells":[]}
 		"ghost":
-			data = {"name":"Fantasma %d" % index,"hp":25,"maxHp":25,"mp":10,"maxMp":10,"speed":12,"spriteKey":"tower_ghost","bodyColor":"#7750ba","flying":true,"ethereal":true,"undead":true,"immediateSoul":true,"soulHp":10,"soulMp":5,"weapons":[{"name":"Mordida","damageMin":4,"damageMax":8,"hitChance":0.80,"critChance":0.15,"critMultiplier":2,"ctCost":50,"minRange":1,"maxRange":1,"damageType":"physical","appliesCtDrain":20}],"spells":[{"name":"Raio Congelante","targetMode":"enemy","damageMin":5,"damageMax":10,"hitChance":0.80,"critChance":0.0,"critMultiplier":1,"ctCost":50,"mpCost":5,"minRange":1,"maxRange":3,"damageType":"ice","projectile":"frost-wand-spd","beamTint":"ice","requiresClearPath":true,"appliesParalyzed":{"turns":1}}]}
+			data = {"name":"Fantasma %d" % index,"hp":35,"maxHp":35,"mp":10,"maxMp":10,"speed":12,"spriteKey":"tower_ghost","bodyColor":"#7750ba","flying":true,"ethereal":true,"undead":true,"immediateSoul":true,"soulHp":10,"soulMp":5,"weapons":[{"name":"Mordida","damageMin":4,"damageMax":8,"hitChance":0.80,"critChance":0.15,"critMultiplier":2,"ctCost":50,"minRange":1,"maxRange":1,"damageType":"physical","appliesCtDrain":20}],"spells":[{"name":"Raio Congelante","targetMode":"enemy","damageMin":5,"damageMax":10,"hitChance":0.80,"critChance":0.0,"critMultiplier":1,"ctCost":50,"mpCost":5,"minRange":1,"maxRange":3,"damageType":"ice","projectile":"frost-wand-spd","beamTint":"ice","requiresClearPath":true,"appliesParalyzed":{"turns":1}}]}
 		"skeleton":
-			data = {"name":"Esqueleto %d" % index,"hp":20,"maxHp":20,"mp":0,"maxMp":0,"speed":10,"spriteKey":"tower_skeleton","bodyColor":"#c6b48f","undead":true,"boneExplosion":true,"weapons":[{"name":"Lança","damageMin":3,"damageMax":6,"hitChance":0.80,"critChance":0.15,"critMultiplier":2,"ctCost":50,"minRange":1,"maxRange":1,"damageType":"physical"},{"name":"Arremesso de Lança","damageMin":3,"damageMax":6,"hitChance":0.80,"critChance":0.0,"critMultiplier":1,"ctCost":50,"minRange":2,"maxRange":3,"cardinalOnly":true,"requiresClearPath":true,"projectile":"spear","damageType":"physical"}],"spells":[]}
+			data = {"name":"Esqueleto %d" % index,"hp":30,"maxHp":30,"mp":0,"maxMp":0,"speed":10,"spriteKey":"tower_skeleton","bodyColor":"#c6b48f","undead":true,"boneExplosion":true,"weapons":[{"name":"Lança","damageMin":3,"damageMax":6,"hitChance":0.80,"critChance":0.15,"critMultiplier":2,"ctCost":50,"minRange":1,"maxRange":1,"damageType":"physical"},{"name":"Arremesso de Lança","damageMin":3,"damageMax":6,"hitChance":0.80,"critChance":0.0,"critMultiplier":1,"ctCost":50,"minRange":2,"maxRange":3,"cardinalOnly":true,"requiresClearPath":true,"projectile":"spear","damageType":"physical"}],"spells":[]}
 		"living_fire":
-			data = {"name":"Fogo Vivo %d" % index,"hp":20,"maxHp":20,"mp":10,"maxMp":10,"speed":11,"spriteKey":"tower_living_fire","bodyColor":"#ff7a16","flying":true,"elementAffinity":{"fire":{"mode":"heal","multiplier":1.0},"ice":{"mode":"damage","multiplier":2.0}},"weapons":[{"name":"Toque de Fogo","damageMin":3,"damageMax":6,"hitChance":0.80,"critChance":0.0,"critMultiplier":1,"ctCost":50,"minRange":1,"maxRange":1,"damageType":"fire","appliesBurn":burn}],"spells":[{"name":"Cuspe de Fogo","targetMode":"enemy","damageMin":4,"damageMax":8,"hitChance":0.80,"critChance":0.0,"critMultiplier":1,"ctCost":60,"mpCost":5,"minRange":2,"maxRange":3,"requiresClearPath":true,"projectile":"fireball","damageType":"fire","appliesBurn":burn},{"name":"Autodestruição","kind":"living-fire-self-destruct","damageMin":5,"damageMax":15,"hitChance":0.80,"critChance":0.0,"critMultiplier":1,"ctCost":0,"mpCost":0,"damageType":"fire"}]}
+			data = {"name":"Fogo Vivo %d" % index,"hp":20,"maxHp":20,"mp":10,"maxMp":10,"speed":11,"spriteKey":"tower_living_fire","bodyColor":"#ff7a16","flying":true,"elementAffinity":{"fire":{"mode":"heal","multiplier":1.0},"ice":{"mode":"damage","multiplier":2.0}},"weapons":[{"name":"Toque de Fogo","damageMin":3,"damageMax":6,"hitChance":0.80,"critChance":0.0,"critMultiplier":1,"ctCost":50,"minRange":1,"maxRange":1,"damageType":"fire","appliesBurn":burn}],"spells":[{"name":"Cuspe de Fogo","targetMode":"enemy","damageMin":4,"damageMax":8,"hitChance":0.80,"critChance":0.0,"critMultiplier":1,"ctCost":60,"mpCost":5,"minRange":2,"maxRange":3,"requiresClearPath":true,"projectile":"fireball","damageType":"fire","appliesBurn":burn},{"name":"Autodestruição","kind":"living-fire-self-destruct","targetMode":"self","damageMin":5,"damageMax":15,"hitChance":0.80,"critChance":0.0,"critMultiplier":1,"ctCost":0,"mpCost":0,"damageType":"fire"}]}
 		"lava_human":
-			data = {"name":"Lava Humana %d" % index,"hp":80,"maxHp":80,"mp":10,"maxMp":10,"speed":10,"spriteKey":"tower_lava_human","bodyColor":"#c94719","elementAffinity":{"fire":{"mode":"heal","multiplier":1.0},"ice":{"mode":"damage","multiplier":2.0}},"weapons":[],"spells":[{"name":"Pancada de Fogo","kind":"fire-self-area","damageMin":4,"damageMax":8,"hitChance":0.80,"critChance":0.15,"critMultiplier":2,"ctCost":50,"mpCost":0,"damageType":"fire","appliesBurn":burn},{"name":"Cone de Fogo","kind":"cone-fire","targetMode":"cone-fire","damageMin":5,"damageMax":10,"hitChance":0.80,"critChance":0.0,"critMultiplier":1,"ctCost":60,"mpCost":5,"minRange":1,"maxRange":3,"damageType":"fire","appliesBurn":burn}]}
+			# Pedido do usuário: Pancada de Fogo é o ATAQUE da Lava Humana (por
+			# isso tinha mpCost 0 — nunca custava mana de verdade), não uma
+			# habilidade — agora mora em "weapons" (sem campo mpCost nenhum,
+			# convenção do catálogo pra diferenciar arma de magia, ver
+			# resolve_single_hit:is_weapon_attack), com minRange/maxRange 1
+			# igual toda arma corpo a corpo. _find_spell na IA (mais abaixo)
+			# virou _find_weapon pra continuar achando ela.
+			data = {"name":"Lava Humana %d" % index,"hp":80,"maxHp":80,"mp":10,"maxMp":10,"speed":10,"spriteKey":"tower_lava_human","bodyColor":"#c94719","elementAffinity":{"fire":{"mode":"heal","multiplier":1.0},"ice":{"mode":"damage","multiplier":2.0}},"weapons":[{"name":"Pancada de Fogo","kind":"fire-self-area","damageMin":4,"damageMax":8,"hitChance":0.80,"critChance":0.15,"critMultiplier":2,"ctCost":50,"minRange":1,"maxRange":1,"damageType":"fire","appliesBurn":burn}],"spells":[{"name":"Cone de Fogo","kind":"cone-fire","targetMode":"cone-fire","damageMin":5,"damageMax":10,"hitChance":0.80,"critChance":0.0,"critMultiplier":1,"ctCost":60,"mpCost":5,"minRange":1,"maxRange":3,"damageType":"fire","appliesBurn":burn}]}
 		"salamander":
 			data = {"name":"Salamandra %d" % index,"hp":300,"maxHp":300,"mp":20,"maxMp":20,"speed":11,"moveRange":4,"spriteKey":"tower_salamander","bodyColor":"#d85b24","footprintWidth":2,"footprintHeight":2,"footprintSize":2,"elementAffinity":{"fire":{"mode":"heal","multiplier":1.0},"ice":{"mode":"damage","multiplier":2.0}},"weapons":[{"name":"Tridente","damageMin":6,"damageMax":10,"hitChance":0.80,"critChance":0.15,"critMultiplier":2,"ctCost":50,"minRange":1,"maxRange":2,"requiresClearPath":true,"swing":"stab","damageType":"fire","appliesBurn":burn}],"spells":[{"name":"Explosão de Fogo","kind":"growth-attack","targetMode":"self-attack","damageMin":8,"damageMax":12,"hitChance":0.80,"critChance":0.0,"critMultiplier":1,"ctCost":60,"mpCost":5,"damageType":"fire","appliesBurn":burn,"sfx":"fire"},{"name":"Labaredas de Chamas","kind":"salamander-flame-wave","targetMode":"flame-creeping-line","damageMin":10,"damageMax":15,"hitChance":0.80,"critChance":0.0,"critMultiplier":1,"ctCost":70,"mpCost":10,"minRange":1,"maxRange":3,"cardinalOnly":true,"bandLength":GameConstants.BOARD_SIZE,"bandWidth":3,"damageType":"fire","appliesBurn":burn,"projectileKind":"fireball","burstKind":"fireball","sfx":"fire"}]}
 		"flame_demon":
@@ -439,7 +525,7 @@ static func dungeon_monster_data(kind: String, index: int = 1, pos: Dictionary =
 			# fraqueza a gelo ×0.5 e as magias do Lich).
 			var vampire_weapons := Weapons.build()
 			data = {
-				"name": "Vampiro %d" % index, "hp": 35, "maxHp": 35, "mp": 15, "maxMp": 15, "speed": 10,
+				"name": "Vampiro %d" % index, "hp": 45, "maxHp": 45, "mp": 15, "maxMp": 15, "speed": 10,
 				"spriteKey": "vampire", "bodyColor": "#6b1836", "undead": true,
 				"weapons": [vampire_weapons["vampireBite"], vampire_weapons["vampiricTouch"]],
 				"spells": [
@@ -472,7 +558,7 @@ static func dungeon_monster_data(kind: String, index: int = 1, pos: Dictionary =
 			# e quem sofre dano.
 			var cure_spell: Dictionary = Spells.build()["cure"]
 			data = {
-				"name": "Lich %d" % index, "hp": 25, "maxHp": 25, "mp": 20, "maxMp": 20, "speed": 10,
+				"name": "Lich %d" % index, "hp": 35, "maxHp": 35, "mp": 20, "maxMp": 20, "speed": 10,
 				"spriteKey": "lich", "bodyColor": "#2f7d4f", "undead": true,
 				"weapons": [Weapons.build()["decayRay"]],
 				"spells": [
@@ -515,6 +601,7 @@ static func dungeon_monster_data(kind: String, index: int = 1, pos: Dictionary =
 						"tooltipNote": "Mesma área/alcance/custo da Cura (raio 1, alcance 3): mortos-vivos recuperam %d-%d de vida; qualquer outra criatura sofre %d-%d de dano." % [cure_spell["healMin"], cure_spell["healMax"], cure_spell["healMin"], cure_spell["healMax"]],
 						"sfx": "poison",
 					},
+					(Spells.build()["reincarnation"] as Dictionary).duplicate(true),
 				],
 			}
 		"dragon":
@@ -537,6 +624,10 @@ static func dungeon_monster_data(kind: String, index: int = 1, pos: Dictionary =
 				# Pedido do usuário: HP ajustado de 50 pra 100 depois da spec original.
 			"name": "Dragão Vermelho %d" % index, "hp": 100, "maxHp": 100, "mp": 10, "maxMp": 10, "speed": 9, "moveRange": 4,
 				"spriteKey": "dragon", "bodyColor": "#b3241f",
+				# Pedido do usuário: Dragão também é unidade 2x2 agora, igual
+				# Salamandra/Goo grande — mesma regra de escala (ver
+				# unit_token.gd:_apply_texture, pés na base/cabeça no topo da caixa).
+				"footprintWidth": 2, "footprintHeight": 2, "footprintSize": 2,
 				"statusImmunities": ["burned"],
 				"elementAffinity": {"fire": {"mode": "immune"}, "ice": {"mode": "damage", "multiplier": 2.0}},
 				"weapons": [dragon_weapons["dragonClaw"], dragon_weapons["dragonTail"]],
@@ -548,7 +639,53 @@ static func dungeon_monster_data(kind: String, index: int = 1, pos: Dictionary =
 			return {}
 	for key in common:
 		if not data.has(key): data[key] = common[key]
+	# Criaturas de fogo apenas ignoram fogo; ataques de fogo não causam dano
+	# nem recuperam HP. A cura da lava é tratada separadamente pelo terreno.
+	if kind in ["living_fire", "lava_human", "salamander", "flame_demon"]:
+		if data.has("elementAffinity"):
+			data["elementAffinity"]["fire"] = {"mode": "immune"}
+	# Rebalanceamento dos Elementais do Fogo: todos os danos diretos de suas
+	# armas e habilidades caem em 2 pontos. Status secundários, como queimadura,
+	# continuam com seus próprios valores. Salamandra e Dragão perdem 1 agilidade.
+	if kind in ["living_fire", "lava_human", "salamander", "dragon", "flame_demon"]:
+		for attack_list_name in ["weapons", "spells"]:
+			for attack in data.get(attack_list_name, []):
+				if attack.has("damageMin"):
+					attack["damageMin"] = maxi(0, int(attack["damageMin"]) - 2)
+				if attack.has("damageMax"):
+					attack["damageMax"] = maxi(0, int(attack["damageMax"]) - 2)
+	if kind == "salamander" or kind == "dragon":
+		data["speed"] = maxi(1, int(data.get("speed", 1)) - 1)
 	return data
+
+static func _add_creature_ranged_attack(data: Dictionary, kind: String) -> void:
+	var attack: Dictionary = {}
+	match kind:
+		"rat":
+			attack = {"name":"Arremesso de Entulho","ctCost":40,"mpCost":1,"damageMin":2,"damageMax":4,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":2,"maxRange":3,"projectile":"stone","accuracyPenaltyChance":0.3,"appliesAccuracyPenalty":0.1,"penaltyTurns":1,"sfx":"ranged"}
+			data["mp"] = maxi(int(data.get("mp", 0)), 1); data["maxMp"] = maxi(int(data.get("maxMp", 0)), 1)
+		"snake":
+			attack = {"name":"Jato de Peçonha","ctCost":50,"mpCost":4,"damageMin":2,"damageMax":4,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":2,"maxRange":4,"projectile":"poison","poisonChance":0.6,"appliesPoison":{"damageMin":1,"damageMax":1,"turns":3},"sfx":"poison"}
+			data["mp"] = maxi(int(data.get("mp", 0)), 4); data["maxMp"] = maxi(int(data.get("maxMp", 0)), 4)
+		"gnoll":
+			attack = {"name":"Lança de Caça","ctCost":55,"mpCost":3,"damageMin":5,"damageMax":8,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":2,"maxRange":4,"projectile":"spear","appliesMarked":{"turns":2,"damageBonus":1},"sfx":"ranged"}
+			data["mp"] = maxi(int(data.get("mp", 0)), 3); data["maxMp"] = maxi(int(data.get("maxMp", 0)), 3)
+		"slime":
+			attack = {"name":"Glóbulo Viscoso","ctCost":45,"mpCost":3,"damageMin":3,"damageMax":5,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":2,"maxRange":3,"projectile":"slime","sfx":"ranged"}
+			data["mp"] = maxi(int(data.get("mp", 0)), 3); data["maxMp"] = maxi(int(data.get("maxMp", 0)), 3)
+		_:
+			return
+	# Ataques à distância das criaturas são armas CT-only: o campo MP fica
+	# explicitamente em zero para a ficha/tooltip, mas nunca condiciona a ação.
+	attack["mpCost"] = 0
+	attack["minRange"] = 1
+	attack["maxRange"] = {"rat": 3, "snake": 4, "gnoll": 4, "slime": 3}.get(kind, attack.get("maxRange", 1))
+	if kind == "slime":
+		attack["appliesSlow"] = {"moveReduction": 1, "turns": 1}
+	var weapons: Array = (data.get("weapons", []) as Array).duplicate(true)
+	if not weapons.any(func(w): return w.get("name", "") == attack["name"]):
+		weapons.append(attack)
+		data["weapons"] = weapons
 
 ## Chave/posição da Maga presa no Campo (única unidade caged: ver
 ## _setup_caged_mage). Tile livre de árvore/água/decoração bloqueante, do
@@ -574,6 +711,51 @@ func _setup_caged_mage() -> void:
 	maga["ct"] = 0
 	maga["hasMoved"] = true
 	maga["hasActed"] = true
+	# Pedido do usuário: nenhum personagem pode começar a partida em cima da
+	# gaiola — inclusive uma unidade 2x2 (Troll) cujo footprint só ENCOSTE
+	# nela depois do embaralhamento de posições (_shuffle_team_positions em
+	# _build_units, que roda antes da gaiola existir e não sabia dela).
+	_relocate_units_overlapping_tile(maga, int(CAGED_MAGE_TILE["x"]), int(CAGED_MAGE_TILE["y"]))
+
+## A regra de não sobrepor unidades vale pros 4 quadrados inteiros de uma
+## unidade grande (Troll/Goo grande/Salamandra/Dragão), não só o tile-âncora
+## — mesma cobertura de footprint que _can_unit_anchor_at já garante pro
+## MOVIMENTO, aplicada aqui num posicionamento inicial que não passava por
+## ela. `protected_unit` nunca é movida (posição roteirizada); qualquer outra
+## unidade cujo footprint invada (tx,ty) é realocada pro tile andável mais
+## próximo da sua própria posição (mesma busca em anéis de
+## _apply_scenario_spawns, que já cobre footprint/estrutura/ocupante).
+func _relocate_units_overlapping_tile(protected_unit: Dictionary, tx: int, ty: int) -> void:
+	for u in units:
+		if u == protected_unit or u["hp"] <= 0 or not unit_contains_tile(u, tx, ty):
+			continue
+		var anchor := {"x": u["x"], "y": u["y"]}
+		var placed := false
+		for radius in range(1, maxi(board_width, board_height)):
+			for dy in range(-radius, radius + 1):
+				for dx in range(-radius, radius + 1):
+					if absi(dx) + absi(dy) != radius: continue
+					var x: int = int(anchor["x"]) + dx
+					var y: int = int(anchor["y"]) + dy
+					if structure_at(x, y) != null or not _can_unit_anchor_at(u, x, y): continue
+					u["x"] = x; u["y"] = y
+					placed = true
+					break
+				if placed: break
+			if placed: break
+
+## Âncora mais próxima de (x,y) — busca em anéis, mesma ordem de
+## _apply_scenario_spawns — onde o corpo inteiro de `u` cabe (limites, terreno,
+## ocupantes). Devolve o próprio (x,y) se já couber ou, sem nenhuma opção, também.
+func _nearest_free_anchor(u: Dictionary, x: int, y: int) -> Dictionary:
+	if _can_unit_anchor_at(u, x, y):
+		return {"x": x, "y": y}
+	for radius in range(1, maxi(board_width, board_height)):
+		for dy in range(-radius, radius + 1):
+			for dx in range(-radius, radius + 1):
+				if absi(dx) + absi(dy) == radius and _can_unit_anchor_at(u, x + dx, y + dy):
+					return {"x": x + dx, "y": y + dy}
+	return {"x": x, "y": y}
 
 func _setup_caged_bardo(definition: Dictionary) -> void:
 	var bard: Dictionary = units_by_key.get(CAGED_BARDO_KEY, {})
@@ -666,9 +848,13 @@ func _apply_scenario_spawns(team: String, spawns: Array) -> void:
 					if absi(dx) + absi(dy) != radius: continue
 					var x: int = int(anchor["x"]) + dx
 					var y: int = int(anchor["y"]) + dy
-					if not in_bounds(x,y) or occupant_at(x,y) != null or structure_at(x,y) != null: continue
-					var terrain = terrain_at(x,y)
-					if terrain != null and BoardLayout.BLOCKING_TERRAIN_TYPES.has(terrain.get("type","")): continue
+					# _can_unit_anchor_at já cobre in_bounds/terreno bloqueante/
+					# ocupante pra TODO o footprint da unidade (não só o tile
+					# âncora) — necessário pra unidades 2x2 (ver ESTRADA INVERNO
+					# TESTE) não caírem em cima de quem já foi posicionado ao
+					# lado; pra unidades 1x1 de sempre o resultado é idêntico
+					# aos 3 checks manuais que substituiu.
+					if structure_at(x,y) != null or not _can_unit_anchor_at(members[i], x, y): continue
 					members[i]["x"] = x; members[i]["y"] = y
 					members[i]["facing"] = {"dx":1,"dy":0} if team == "player" else {"dx":0,"dy":1}
 					placed = true
@@ -730,7 +916,10 @@ func _setup_village(definition: Dictionary) -> void:
 	for i in range(mini(2, enemy_spawns.size())):
 		var troll: Dictionary = (templates["troll"] as Dictionary).duplicate(true)
 		troll["name"] = "Troll"
-		troll["x"] = enemy_spawns[i]["x"]; troll["y"] = enemy_spawns[i]["y"]
+		# Troll ocupa 2x2: o ponto do cenário pode não comportar o corpo inteiro
+		# (prédio/obstáculo numa das 4 casas), então usa a âncora livre mais próxima.
+		var troll_anchor := _nearest_free_anchor(troll, int(enemy_spawns[i]["x"]), int(enemy_spawns[i]["y"]))
+		troll["x"] = troll_anchor["x"]; troll["y"] = troll_anchor["y"]
 		troll["facing"] = {"dx":-1,"dy":0}
 		units.append(troll)
 		units_by_key["troll_%d" % (i + 1)] = troll
@@ -756,6 +945,249 @@ func _setup_village(definition: Dictionary) -> void:
 	archer["hasMoved"] = true; archer["hasActed"] = true
 	units.append(archer)
 	units_by_key["arqueiro"] = archer
+
+## PORTO (cenário independente, pedido do usuário — ver
+## ScenarioManager._porto_definition()): monta terrain_map a partir da
+## estrada/água/píer/prédios/obstáculos da definição e spawna só 1 herói +
+## 1 monstro genéricos (Units.build()) pra QA do mapa — sem roteiro/reforço,
+## ao contrário de _setup_village().
+##
+## Terrain types usados aqui:
+## - "porto-road": walkable=true (única, junto da ausência de entrada = grama,
+##   ver is_battleable) — as DUAS únicas coisas battleable no PORTO.
+## - "porto-water": água 100% bloqueada (type PRÓPRIO, não "water" — ver
+##   comentário em BoardLayout.BLOCKING_TERRAIN_TYPES).
+## - "porto-pier"/"porto-blocked": píer, casa, fonte, cercas, barris/caixas e
+##   carroça — todos bloqueiam igual, só o "type" muda pra granularidade do
+##   relatório de QA (ver is_battleable/testes).
+func _setup_porto(definition: Dictionary) -> void:
+	for tile in definition.get("road", []):
+		terrain_map[tile_key(tile["x"],tile["y"])] = {"type":"porto-road","walkable":true}
+	for tile in definition.get("water", []):
+		terrain_map[tile_key(tile["x"],tile["y"])] = {"type":"porto-water"}
+	for tile in definition.get("pier", []):
+		terrain_map[tile_key(tile["x"],tile["y"])] = {"type":"porto-pier"}
+	for building in definition.get("buildings", []):
+		for oy in int(building["h"]):
+			for ox in int(building["w"]):
+				var key := tile_key(int(building["x"])+ox, int(building["y"])+oy)
+				terrain_map[key] = {"type":"porto-blocked"}
+	var fountain: Dictionary = definition.get("fountain", {})
+	if not fountain.is_empty():
+		for oy in int(fountain["h"]):
+			for ox in int(fountain["w"]):
+				var key := tile_key(int(fountain["x"])+ox, int(fountain["y"])+oy)
+				terrain_map[key] = {"type":"porto-blocked"}
+	# Obstáculos avulsos: só as células que ainda não viraram água/píer/prédio/
+	# fonte acima entram como "porto-blocked" — blocked_tiles já vem com TODAS
+	# as células (prédio+fonte+píer+obstáculos somados em
+	# _porto_definition()), então sem essa checagem uma célula de píer/água
+	# seria reescrita (inofensivo aqui, mas evita reescrita redundante).
+	for tile in definition.get("blocked_tiles", []):
+		var key := tile_key(tile["x"],tile["y"])
+		if not terrain_map.has(key):
+			terrain_map[key] = {"type":"porto-blocked"}
+	var templates := Units.build()
+	var hero: Dictionary = (templates["guerreiro"] as Dictionary).duplicate(true)
+	var spawn: Dictionary = definition["player_spawns"][0]
+	hero["x"] = spawn["x"]; hero["y"] = spawn["y"]
+	hero["facing"] = {"dx":1,"dy":0}
+	units = [hero]
+	units_by_key = {"guerreiro":hero}
+	var enemy_spawns: Array = definition.get("enemy_spawns", [])
+	if not enemy_spawns.is_empty():
+		var goblin: Dictionary = (templates["goblin"] as Dictionary).duplicate(true)
+		goblin["name"] = "Goblin"
+		goblin["x"] = enemy_spawns[0]["x"]; goblin["y"] = enemy_spawns[0]["y"]
+		goblin["facing"] = {"dx":-1,"dy":0}
+		units.append(goblin)
+		units_by_key["goblin_1"] = goblin
+
+## Regra central pedida pelo usuário pro PORTO, mas escrita como utilitário
+## genérico (funciona pra qualquer cenário): elegibilidade de TERRENO pra
+## batalha, ignorando quem esteja em cima agora (ver compute_reachable/
+## _can_unit_anchor_at pra "andável AGORA", que também considera ocupante).
+## Neste projeto não existe um "modo exploração" separado do "modo batalha" —
+## todo tile andável já É um tile de batalha, então "battleable" aqui é
+## sinônimo de "não bloqueado pelo terreno" (BoardLayout.BLOCKING_TERRAIN_
+## TYPES). Grama é o chão implícito (nunca ganha entrada em terrain_map,
+## ver qualquer _setup_*), por isso `terrain == null` conta como battleable.
+func is_battleable(x: int, y: int) -> bool:
+	if not in_bounds(x, y):
+		return false
+	var terrain = terrain_at(x, y)
+	if terrain == null:
+		return true
+	# Ravina do Desfiladeiro: property de TERRENO (sem unidade nenhuma em
+	# jogo) — pra maioria das unidades é obstáculo, então conta como
+	# bloqueada aqui, mesmo não estando em BoardLayout.BLOCKING_TERRAIN_TYPES
+	# (que precisa deixar voadoras passarem, ver compute_reachable/
+	# _can_unit_anchor_at). O overlay de debug (_draw_battleable_debug)
+	# ainda distingue esse caso com uma 3ª cor (azul, "só voo").
+	if terrain.get("type", "") == "desfiladeiro-chasm":
+		return false
+	return not BoardLayout.BLOCKING_TERRAIN_TYPES.has(terrain.get("type", ""))
+
+## DESFILADEIRO (cenário independente, pedido do usuário — ver
+## ScenarioManager._desfiladeiro_definition()): monta terrain_map a partir
+## da ravina/ponte/árvores/obstáculos e spawna 1 herói + 1 monstro genéricos
+## pra QA (sem roteiro), igual _setup_porto().
+##
+## Terrain types:
+## - "desfiladeiro-bridge": battleable/walkable (a única travessia terrestre
+##   da ravina).
+## - "desfiladeiro-chasm": bloqueia terrestres, sobrevoável — NÃO está em
+##   BoardLayout.BLOCKING_TERRAIN_TYPES (ver comentário lá); a checagem mora
+##   em compute_reachable/_can_unit_anchor_at.
+## - "tree": reaproveita o obstáculo já existente (HP/bloqueio/ruína de
+##   BoardLayout.destructible_tile_types), só com "art" pintada de neve.
+## - "desfiladeiro-blocked": pedra grande/monólito — obstáculo genérico,
+##   bloqueia todo mundo (inclusive voadores, ver comentário na constante).
+func _setup_desfiladeiro(definition: Dictionary) -> void:
+	for tile in definition.get("bridge", []):
+		terrain_map[tile_key(tile["x"],tile["y"])] = {"type":"desfiladeiro-bridge","walkable":true}
+	for tile in definition.get("chasm", []):
+		terrain_map[tile_key(tile["x"],tile["y"])] = {"type":"desfiladeiro-chasm"}
+	for tree in definition.get("trees", []):
+		terrain_map[tile_key(tree["x"],tree["y"])] = {"type":"tree","art":tree["art"],"hp":GameConstants.TREE_MAX_HP,"maxHp":GameConstants.TREE_MAX_HP}
+	for tile in definition.get("blocked_tiles", []):
+		var key := tile_key(tile["x"],tile["y"])
+		if not terrain_map.has(key):
+			terrain_map[key] = {"type":"desfiladeiro-blocked"}
+	var templates := Units.build()
+	var hero: Dictionary = (templates["guerreiro"] as Dictionary).duplicate(true)
+	var spawn: Dictionary = definition["player_spawns"][0]
+	hero["x"] = spawn["x"]; hero["y"] = spawn["y"]
+	hero["facing"] = {"dx":1,"dy":0}
+	units = [hero]
+	units_by_key = {"guerreiro":hero}
+	var enemy_spawns: Array = definition.get("enemy_spawns", [])
+	if not enemy_spawns.is_empty():
+		var goblin: Dictionary = (templates["goblin"] as Dictionary).duplicate(true)
+		goblin["name"] = "Goblin"
+		goblin["x"] = enemy_spawns[0]["x"]; goblin["y"] = enemy_spawns[0]["y"]
+		goblin["facing"] = {"dx":-1,"dy":0}
+		units.append(goblin)
+		units_by_key["goblin_1"] = goblin
+	desfiladeiro_wind_last_turn = -1
+	desfiladeiro_wind_events = []
+
+## Vento gelado do DESFILADEIRO: a cada 5 turnos globais (5, 10, 15... —
+## mesmo contador `global_turn_count` que a Vila já usa pros reforços
+## dela, chamado de dentro de `begin_turn_for`) reaproveita EXATAMENTE o
+## efeito do Cone de Gelo do Mago (`Spells.build()["iceCone"].
+## appliesSpeedReduction`, a mesma lentidão -1 de agilidade por 2 turnos) e
+## as MESMAS regras de afinidade elemental/resistência a gelo que já
+## existem (elementAffinity["ice"], meio dano em mortos-vivos — os mesmos
+## trechos usados por resolve_single_hit) — só com dano ambiental próprio
+## (1-3, pedido explícito) e uma chance própria (80%) por unidade, em vez da
+## mira/ângulo geométrico de um golpe de verdade (flanquear não faz sentido
+## pra vento). Não chama finalize_action/consome CT de ninguém — é hazard de
+## mapa, não uma ação de unidade (ver `begin_turn_for`: chamado fora do
+## bloco "if not pvp_custom_battle", pra valer também no Modo PVP).
+func maybe_trigger_desfiladeiro_wind() -> void:
+	if scenario_id != ScenarioManager.DESFILADEIRO:
+		return
+	if global_turn_count <= 0 or global_turn_count % 5 != 0:
+		return
+	if desfiladeiro_wind_last_turn == global_turn_count:
+		return
+	desfiladeiro_wind_last_turn = global_turn_count
+	var ice_cone: Dictionary = Spells.build()["iceCone"]
+	var reduction: Dictionary = ice_cone["appliesSpeedReduction"]
+	var hit_names: Array = []
+	_log("Um vento gelado varre o desfiladeiro!")
+	for u in units:
+		if u["hp"] <= 0:
+			continue
+		if rng.randf() >= 0.8:
+			continue
+		var damage: int = rng.randi_range(1, 3)
+		var affinity: Dictionary = u.get("elementAffinity", {}).get("ice", {})
+		var mode: String = affinity.get("mode", "damage")
+		if mode == "immune":
+			_log("%s é imune ao vento gelado." % u["name"])
+			continue
+		if mode == "heal":
+			var healing: int = int(round(damage * float(affinity.get("multiplier", 1.0))))
+			var actual_heal: int = mini(healing, int(u["maxHp"]) - int(u["hp"]))
+			u["hp"] = mini(int(u["maxHp"]), int(u["hp"]) + healing)
+			_log("%s absorve o frio do vento gelado e recupera %d HP!" % [u["name"], actual_heal])
+			continue
+		var final_damage: int = int(round(damage * float(affinity.get("multiplier", 1.0))))
+		if u.get("undead", false):
+			final_damage = int(floor(final_damage * 0.5))
+		u["hp"] -= final_damage
+		var amount: int = int(reduction["amount"])
+		u["speed"] -= amount
+		add_status_effect(u, {"type":"slowed","turnsLeft":int(reduction["turns"]),"speedReduction":amount})
+		_log("%s é atingido(a) pelo vento gelado! %d de dano e -%d de agilidade por %d turno(s)." % [u["name"], final_damage, amount, int(reduction["turns"])])
+		hit_names.append(u["name"])
+	desfiladeiro_wind_events.append({"turn":global_turn_count,"hit":hit_names})
+
+## ESTRADA INVERNO (cenário independente, pedido do usuário — ver
+## ScenarioManager._estrada_inverno_definition()): monta terrain_map a
+## partir do rio/trilha/parede/escada/árvores/obstáculos e spawna 1 herói +
+## 1 monstro genéricos pra QA (sem roteiro), igual _setup_porto()/_setup_
+## desfiladeiro(). O monstro nasce NO PLATÔ de propósito, só alcançável pela
+## escada, pra validar a regra de elevação na prática.
+##
+## Terrain types:
+## - "water": o MESMO type comum já usado em todo cenário (Campo/Vila/Vale
+##   de Lua/Torre) — sem type próprio, herda GameState.water_step_cost/
+##   get_effective_hit_chance_breakdown automaticamente (ver comentário em
+##   ScenarioManager._estrada_inverno_definition()).
+## - "estrada-inverno-trail": battleable/walkable (a trilha).
+## - "estrada-inverno-cliff": bloqueia todo mundo (parede do platô).
+## - "estrada-inverno-stairs": battleable/walkable (único vão da parede).
+## - "tree": reaproveita o obstáculo já existente, só com "art" nevada.
+## - "estrada-inverno-blocked": poço/pedra grande/barril — obstáculo
+##   genérico avulso, bloqueia todo mundo.
+func _setup_estrada_inverno(definition: Dictionary) -> void:
+	for tile in definition.get("water", []):
+		terrain_map[tile_key(tile["x"],tile["y"])] = {"type":"water","estradaInvernoRiver":true}
+	for tile in definition.get("trail", []):
+		terrain_map[tile_key(tile["x"],tile["y"])] = {"type":"estrada-inverno-trail","walkable":true}
+	for tile in definition.get("cliff", []):
+		terrain_map[tile_key(tile["x"],tile["y"])] = {"type":"estrada-inverno-cliff"}
+	for tile in definition.get("stairs", []):
+		terrain_map[tile_key(tile["x"],tile["y"])] = {"type":"estrada-inverno-stairs","walkable":true}
+	for tree in definition.get("trees", []):
+		terrain_map[tile_key(tree["x"],tree["y"])] = {"type":"tree","art":tree["art"],"hp":GameConstants.TREE_MAX_HP,"maxHp":GameConstants.TREE_MAX_HP}
+	for tile in definition.get("blocked_tiles", []):
+		var key := tile_key(tile["x"],tile["y"])
+		# Pedra/poço/barril sobre a trilha (andável) BLOQUEIA: blocked_tiles é a
+		# fonte de verdade de "isto bloqueia" e vence terreno andável.
+		if not terrain_map.has(key) or terrain_map[key].get("walkable", false):
+			terrain_map[key] = {"type":"estrada-inverno-blocked"}
+	var templates := Units.build()
+	var hero: Dictionary = (templates["guerreiro"] as Dictionary).duplicate(true)
+	var spawn: Dictionary = definition["player_spawns"][0]
+	hero["x"] = spawn["x"]; hero["y"] = spawn["y"]
+	hero["facing"] = {"dx":1,"dy":0}
+	units = [hero]
+	units_by_key = {"guerreiro":hero}
+	var enemy_spawns: Array = definition.get("enemy_spawns", [])
+	if not enemy_spawns.is_empty():
+		var goblin: Dictionary = (templates["goblin"] as Dictionary).duplicate(true)
+		goblin["name"] = "Goblin"
+		goblin["x"] = enemy_spawns[0]["x"]; goblin["y"] = enemy_spawns[0]["y"]
+		goblin["facing"] = {"dx":-1,"dy":0}
+		units.append(goblin)
+		units_by_key["goblin_1"] = goblin
+
+## TEMPLO / CEMITÉRIO (ver HauntedScenery): terreno sólido vem de
+## "blocked_tiles" (cada um com o próprio type: "scenery-wall" bloqueia todo
+## mundo, "scenery-prop" só unidades de 1 casa) e "water". Caminhos, névoa e
+## decalques são só visuais. Sem unidades fixas: os times padrão nascem nos
+## spawns do cenário (heróis na entrada, inimigos no fundo do mapa).
+func _setup_haunted_scenery(definition: Dictionary) -> void:
+	for tile in definition.get("water", []):
+		terrain_map[tile_key(tile["x"],tile["y"])] = {"type":"water"}
+	for tile in definition.get("blocked_tiles", []):
+		terrain_map[tile_key(tile["x"],tile["y"])] = {"type":String(tile["type"])}
+	_apply_scenario_spawns("player", definition.get("player_spawns", []))
+	_apply_scenario_spawns("enemy", definition.get("enemy_spawns", []))
 
 ## Reforço único da Vila: o Arqueiro já está em campo desde _setup_village()
 ## (caído, hp/mp 0, "scriptedRevive" — ver comentário lá), então aqui só
@@ -928,6 +1360,7 @@ static func black_slime_boss_data(pos: Dictionary = {"x": 5, "y": 5}, display_na
 	return {"name":display_name,"team":"enemy","x":int(pos["x"]),"y":int(pos["y"]),"hp":200,"maxHp":200,"moveRange":3,"speed":20,"ct":0,"mp":10,"maxMp":10,"hasMoved":false,"hasActed":false,"statusEffects":[],"facing":{"dx":0,"dy":1},"spriteKey":"spd_goo","footprintWidth":2,"footprintHeight":2,"footprintSize":2,"slimeStage":0,"weapons":[slam],"spells":[poison],"counterAttackChance":BLACK_SLIME_COUNTER_CHANCE,"counterWeapon":slam}
 
 func cast_black_slime_poison(caster: Dictionary) -> void:
+	record_area_action(caster, {"name":"Nuvem Venenosa", "targetMode":"self-aoe", "kind":"boss-poison", "areaRadius":2, "sfx":"poison"}, caster)
 	for target in alive_units():
 		if target["team"] == caster["team"] or manhattan(caster, target) > 2: continue
 		add_status_effect(target, {"type":"poison","damageMin":1,"damageMax":3,"turnsLeft":3,"ctDrainPerTurn":10})
@@ -939,13 +1372,20 @@ func cast_black_slime_poison(caster: Dictionary) -> void:
 func _check_black_slime_split(slime: Dictionary) -> void:
 	if slime.get("spriteKey", "") != "spd_goo" or slime.get("splitting", false): return
 	var stage := int(slime.get("slimeStage", -1))
-	# Pedido do usuário: Slime Negro (200 HP, campanha E Modo PVP — mantido
-	# idêntico nos dois modos) divide em 2x70 ao atingir 140 HP, e cada forma
-	# de 70 divide em 2x20 ao atingir 40 HP.
-	var threshold := 140 if stage == 0 else (40 if stage == 1 else -1)
+	# Pedido do usuário: no Modo PVP o Slime Negro começa com 80 HP (ver
+	# PVP_MONSTER_STAT_OVERRIDES["goo"]) em vez dos 200 da campanha — limiar e
+	# HP dos filhos escalam junto (80→divide aos 60 em 2x30→divide aos 20 em
+	# 2x10), senão a divisão nunca aconteceria a partir de só 80 HP.
+	var threshold: int
+	var child_hp: int
+	if pvp_custom_battle:
+		threshold = 70 if stage == 0 else (20 if stage == 1 else -1)
+		child_hp = 35 if stage == 0 else 10
+	else:
+		threshold = 140 if stage == 0 else (40 if stage == 1 else -1)
+		child_hp = 70 if stage == 0 else 20
 	if threshold < 0 or slime["hp"] > threshold: return
 	slime["splitting"] = true
-	var child_hp := 70 if stage == 0 else 20
 	var child_speed := 25 if stage == 0 else 30
 	var damage_min := 4 if stage == 0 else 2
 	var damage_max := 8 if stage == 0 else 4
@@ -1128,6 +1568,69 @@ func footprint_width(u: Dictionary) -> int:
 func footprint_height(u: Dictionary) -> int:
 	return maxi(1, int(u.get("footprintHeight", u.get("footprintSize", 1))))
 
+## Unidade de 4 casas (Troll/Dragão/Salamandra/Goo grande). Ignora props
+## (BoardLayout.LARGE_UNIT_PASSABLE_TERRAIN_TYPES) e nunca fica sobre uma
+## estrutura (Castelo/Montanha) — ver _can_unit_anchor_at.
+func is_large_unit(u: Dictionary) -> bool:
+	return footprint_width(u) > 1 or footprint_height(u) > 1
+
+## Terreno bloqueante PARA ESTA unidade: igual à lista global, exceto os props
+## que uma unidade grande ignora.
+func _terrain_blocks_unit(u: Dictionary, terrain: Variant) -> bool:
+	if terrain == null:
+		return false
+	var terrain_type: String = terrain.get("type", "")
+	if is_large_unit(u) and BoardLayout.LARGE_UNIT_PASSABLE_TERRAIN_TYPES.has(terrain_type):
+		return false
+	return BoardLayout.BLOCKING_TERRAIN_TYPES.has(terrain_type)
+
+## Caixa do corpo (limites inclusivos). Corpo 1x1: left == right, top == bottom.
+func _body_box(u: Dictionary) -> Dictionary:
+	return {"left": int(u["x"]), "top": int(u["y"]),
+		"right": int(u["x"]) + footprint_width(u) - 1, "bottom": int(u["y"]) + footprint_height(u) - 1}
+
+## Direção (-1/0/1 por eixo) de `tile` em relação ao CORPO de `caster`: fora da
+## caixa num eixo = ±1; dentro da faixa do corpo naquele eixo = 0. Corpo 1x1 =
+## o _signi de sempre (âncora).
+func body_direction(caster: Dictionary, tile: Dictionary) -> Vector2i:
+	var box := _body_box(caster)
+	var tx := int(tile["x"])
+	var ty := int(tile["y"])
+	return Vector2i(
+		1 if tx > box["right"] else (-1 if tx < box["left"] else 0),
+		1 if ty > box["bottom"] else (-1 if ty < box["top"] else 0))
+
+## Igual a body_direction, mas pra habilidades só-cardeais: se o tile está fora
+## da caixa nos dois eixos (canto de uma faixa), vale o eixo mais distante.
+## Corpo 1x1 não muda (mantém o comportamento original, inclusive diagonal).
+func _cardinal_direction(caster: Dictionary, tile: Dictionary) -> Vector2i:
+	var dir := body_direction(caster, tile)
+	if is_large_unit(caster) and dir.x != 0 and dir.y != 0:
+		var box := _body_box(caster)
+		var out_x: int = absi(int(tile["x"]) - (box["right"] if dir.x > 0 else box["left"]))
+		var out_y: int = absi(int(tile["y"]) - (box["bottom"] if dir.y > 0 else box["top"]))
+		return Vector2i(dir.x, 0) if out_x >= out_y else Vector2i(0, dir.y)
+	return dir
+
+## Casas do corpo de onde uma habilidade sai na direção (dx,dy): corpo 1x1 = a
+## própria casa; corpo grande cardeal = as casas da borda daquele lado (2 no
+## 2x2, ou seja, o ataque cobre os 2 quadrados e não só 1); diagonal = o canto.
+func body_lane_origins(u: Dictionary, dx: int, dy: int) -> Array:
+	var box := _body_box(u)
+	var xs: Array = range(box["left"], box["right"] + 1) if dx == 0 else [box["right"] if dx > 0 else box["left"]]
+	var ys: Array = range(box["top"], box["bottom"] + 1) if dy == 0 else [box["bottom"] if dy > 0 else box["top"]]
+	var result: Array = []
+	for y in ys:
+		for x in xs:
+			result.append({"x": x, "y": y})
+	return result
+
+## Casa logo fora do corpo na direção (dx,dy) — alvo "de mira" usado pela IA
+## e por testes. Corpo 1x1: âncora + (dx,dy), como antes.
+func body_probe_tile(u: Dictionary, dx: int, dy: int) -> Dictionary:
+	var lane: Dictionary = body_lane_origins(u, dx, dy)[0]
+	return {"x": lane["x"] + dx, "y": lane["y"] + dy}
+
 func footprint_tiles(u: Dictionary, anchor_x: Variant = null, anchor_y: Variant = null) -> Array:
 	var origin_x := int(u["x"] if anchor_x == null else anchor_x)
 	var origin_y := int(u["y"] if anchor_y == null else anchor_y)
@@ -1155,6 +1658,10 @@ func units_cardinally_aligned(a: Dictionary, b: Dictionary) -> bool:
 
 func unit_at(x: int, y: int) -> Variant:
 	for u in alive_units():
+		# Montado na Vestruz: o quadrado é ocupado pela montaria (é ela quem
+		# leva os ataques); o cavaleiro não conta como ocupante à parte.
+		if u.get("mountedOn", "") != "":
+			continue
 		if unit_contains_tile(u, x, y):
 			return u
 	return null
@@ -1192,8 +1699,9 @@ func structure_occupant(structure: Dictionary) -> Variant:
 
 # --- Movimento (game.js:5442-5648) ------------------------------------------
 
-## Voa por cima de armadilhas sem custo extra nem gatilho. Times aliados ao
-## dono da armadilha nunca pagam o custo extra (nem a acionam).
+## Voa por cima de armadilhas sem custo extra nem gatilho. Armadilhas do Ladino
+## não aumentam o custo: ao serem pisadas, interrompem o movimento no próprio
+## quadrado. Armadilhas do ambiente continuam custando um ponto extra.
 func trap_step_cost(u: Dictionary, x: int, y: int) -> int:
 	if u.get("flying", false):
 		return 1
@@ -1202,7 +1710,7 @@ func trap_step_cost(u: Dictionary, x: int, y: int) -> int:
 			continue
 		for t in (trap["tiles"] as Array):
 			if t["x"] == x and t["y"] == y:
-				return 2
+				return 1 if trap.get("instant", false) else 2
 	return 1
 
 ## Água custa 2 pra entrar; quem voa passa sem o custo extra.
@@ -1230,6 +1738,10 @@ func step_cost(u: Dictionary, x: int, y: int) -> int:
 ## visitado a cada passo, sem heap. Guarda cameFrom/custos em
 ## last_reachable_came_from/last_reachable_costs pra reconstruct_path.
 func compute_reachable(u: Dictionary) -> Array:
+	# Montado: quem se move é a montaria (MOV e voo dela), levando o cavaleiro.
+	var carrying_mount = mount_of(u)
+	if carrying_mount != null:
+		return compute_reachable(carrying_mount)
 	var dist := {}
 	var came_from := {}
 	var visited := {}
@@ -1278,13 +1790,12 @@ func compute_reachable(u: Dictionary) -> Array:
 			if visited.has(key):
 				continue
 
-			# Cadáver ainda na janela de ressurreição (3 rodadas): bloqueia
-			# passagem — só libera o tile quando decai pra alma de vez
-			# (apply_corpse_decay_tick apaga turnsSinceDeath e dead_unit_at
-			# para de achar o corpo ali). Quem voa continua passando por
-			# cima, mesma exceção do inimigo vivo logo abaixo.
-			if not u.get("flying", false) and dead_unit_at(nx, ny) != null:
-				continue
+			# Pedido do usuário: cadáver (ainda na janela de ressurreição de 3
+			# rodadas) não obstrui passagem — qualquer um pode atravessar o
+			# tile dele livremente. _can_unit_anchor_at (chamado logo acima,
+			# no "pode parar aqui") continua barrando esse tile como DESTINO
+			# via occupant_at, então ninguém termina o movimento em cima de um
+			# corpo, só não é mais bloqueado ao passar por ele no caminho.
 
 			# Aliado nunca bloqueia PASSAGEM, só não pode ser destino
 			# (occupant_at acima já garante isso). Inimigo bloqueia a menos
@@ -1295,9 +1806,18 @@ func compute_reachable(u: Dictionary) -> Array:
 				if not same_team and not u.get("flying", false):
 					continue
 
-			# Árvore/tenda: obstáculo puro, ninguém atravessa nem "para".
+			# No Campo, árvores ocupam o espaço, mas não formam uma parede:
+			# podem ser atravessadas durante o caminho, porém _can_unit_anchor_at
+			# continua impedindo que alguém termine o movimento nelas.
 			var terrain = terrain_at(nx, ny)
-			if terrain != null and BoardLayout.BLOCKING_TERRAIN_TYPES.has(terrain["type"]):
+			if _terrain_blocks_transit(terrain, u):
+				continue
+			# Ravina do Desfiladeiro: bloqueia só quem não voa — mesma ideia de
+			# exceção `flying` já usada acima pra ocupante inimigo/cadáver, só
+			# que pro terreno em si. Não é um type em BLOCKING_TERRAIN_TYPES de
+			# propósito (ver comentário na constante), senão bloquearia
+			# voadores também.
+			if terrain != null and terrain.get("type", "") == "desfiladeiro-chasm" and not u.get("flying", false):
 				continue
 
 			# Castelo/Montanha: exclusivo do time dono, vaga única (1 por vez).
@@ -1334,10 +1854,37 @@ func _can_unit_anchor_at(u: Dictionary, x: int, y: int) -> bool:
 			var ty := int(tile["y"])
 			if not in_bounds(tx, ty): return false
 			var terrain = terrain_at(tx, ty)
-			if terrain != null and BoardLayout.BLOCKING_TERRAIN_TYPES.has(terrain.get("type", "")): return false
+			if _terrain_blocks_unit(u, terrain): return false
+			# Corpo de 4 casas nunca invade Castelo/Montanha (a regra de vaga
+			# única/time dono de compute_reachable só olha o tile-âncora).
+			if is_large_unit(u) and structure_at(tx, ty) != null: return false
+			# Ravina do Desfiladeiro: mesma exceção de voo do terreno em
+			# compute_reachable — quem voa PODE parar sobre a ravina, quem não
+			# voa nunca.
+			if terrain != null and terrain.get("type", "") == "desfiladeiro-chasm" and not u.get("flying", false): return false
 			var occupant = occupant_at(tx, ty)
 			if occupant != null and occupant != u: return false
 	return true
+
+## Só terreno/limites/estrutura (ignora ocupantes) — usado pelo Atropelar de
+## corpo grande, que passa POR CIMA de inimigos mas não de morro/parede.
+func _large_body_blocked_at(u: Dictionary, x: int, y: int) -> bool:
+	for tile in footprint_tiles(u, x, y):
+		var tx := int(tile["x"])
+		var ty := int(tile["y"])
+		if not in_bounds(tx, ty) or _terrain_blocks_unit(u, terrain_at(tx, ty)) or structure_at(tx, ty) != null:
+			return true
+	return false
+
+func _terrain_blocks_transit(terrain: Variant, u: Dictionary = {}) -> bool:
+	if terrain == null:
+		return false
+	# Regra exclusiva do cenário Campo: árvore não é uma barreira de rota.
+	if scenario_id == ScenarioManager.FIELD and terrain.get("type", "") == "tree":
+		return false
+	if not u.is_empty():
+		return _terrain_blocks_unit(u, terrain)
+	return BoardLayout.BLOCKING_TERRAIN_TYPES.has(terrain.get("type", ""))
 
 ## Reconstrói o caminho (sem incluir o tile de partida) até (dest_x,dest_y)
 ## usando o cache do último compute_reachable() — só confiável logo após
@@ -1364,19 +1911,36 @@ func apply_trap_crossings(u: Dictionary, path_tiles: Array) -> void:
 	for step in path_tiles:
 		for i in range(traps.size()):
 			var trap: Dictionary = traps[i]
-			if trap["ownerTeam"] == u["team"] or trap.get("triggered", false) or triggered_indices.has(i):
+			# Pedido do usuário: armadilha do Ladino (identificada por
+			# "ownerName") só poupa quem a instalou, não o time inteiro dele —
+			# aliados podem sofrer o dano normalmente. Armadilhas do ambiente
+			# (sem "ownerName") continuam usando a imunidade por time de antes.
+			var is_immune: bool = trap["ownerName"] == u["name"] if trap.has("ownerName") else trap["ownerTeam"] == u["team"]
+			if is_immune or trap.get("triggered", false) or triggered_indices.has(i):
 				continue
 			for t in (trap["tiles"] as Array):
 				if t["x"] == step["x"] and t["y"] == step["y"]:
 					triggered_indices[i] = true
 					break
+	# Pedido do usuário: armadilha "instant" (do Ladino) some assim que
+	# alguém a aciona e sofre o dano, em vez de ficar revelada por 3 turnos.
+	var consumed_indices := {}
 	for i in triggered_indices.keys():
 		var trap: Dictionary = traps[i]
 		_trigger_tower_trap(trap, u)
-		if not trap["triggered"]:
+		if trap.get("instant", false):
+			consumed_indices[i] = true
+			_log("A armadilha se desfaz depois de acionada!")
+		elif not trap["triggered"]:
 			trap["triggered"] = true
 			trap["turnsLeft"] = 3
 			_log("A armadilha é revelada!")
+	if not consumed_indices.is_empty():
+		var remaining_traps: Array = []
+		for i in range(traps.size()):
+			if not consumed_indices.has(i):
+				remaining_traps.append(traps[i])
+		traps = remaining_traps
 	if u["hp"] <= 0:
 		u["hp"] = 0
 		_log("%s foi derrotado!" % u["name"])
@@ -1478,6 +2042,17 @@ func is_poisoned(u: Dictionary) -> bool:
 
 func is_invisible(u: Dictionary) -> bool:
 	return _has_status(u, "invisible")
+
+func _update_goblin_cowardice(u: Dictionary) -> void:
+	if u.get("spriteKey", "") != "goblin": return
+	var active := bool(u.get("strategicCowardice", false))
+	var should_be_active := int(u.get("hp", 0)) > 0 and int(u.get("hp", 0)) * 100 < int(u.get("maxHp", 1)) * 30
+	if should_be_active and not active:
+		u["moveRange"] += 2
+		u["strategicCowardice"] = true
+	elif not should_be_active and active:
+		u["moveRange"] = maxi(1, int(u["moveRange"]) - 2)
+		u["strategicCowardice"] = false
 
 ## Ofuscado (Luz da Fada): reduz a própria chance de acerto de quem foi
 ## atingido, não a de quem o ataca.
@@ -1671,6 +2246,22 @@ func get_effective_hit_chance_breakdown(attacker: Dictionary, defender: Dictiona
 	if is_dazed(attacker):
 		breakdown.append({"label": "Atordoado", "delta": -0.1})
 		chance -= 0.1
+	for dust_effect in attacker.get("statusEffects", []):
+		if dust_effect.get("type", "") == "dustBlind":
+			var dust_penalty: float = float(dust_effect.get("amount", 0.2))
+			breakdown.append({"label": "Poeira nos olhos", "delta": -dust_penalty})
+			chance -= dust_penalty
+			break
+	for effect in defender.get("statusEffects", []):
+		if effect.get("type", "") == "accuracyPenalty":
+			var penalty: float = float(effect.get("amount", 0.0))
+			breakdown.append({"label": "Precisão reduzida", "delta": -penalty})
+			chance -= penalty
+			break
+	if is_ranged_attack(item):
+		for effect in defender.get("statusEffects", []):
+			if effect.get("type", "") == "rangedRangePenalty" and distance > maxi(1, int(item["maxRange"]) - int(effect.get("amount", 0))):
+				return {"chance": 0.0, "breakdown": breakdown + [{"label": "Alcance reduzido", "delta": -1.0}]}
 	var attacker_terrain = terrain_at(attacker["x"], attacker["y"])
 	var attacker_elevated: bool = attacker.get("flying", false) or (attacker_terrain != null and attacker_terrain["type"] == "house")
 	if attacker_elevated:
@@ -1699,6 +2290,10 @@ func get_effective_hit_chance_breakdown(attacker: Dictionary, defender: Dictiona
 	if inspiration_hit_bonus > 0.0:
 		breakdown.append({"label":"Canção da Inspiração", "delta":inspiration_hit_bonus})
 		chance += inspiration_hit_bonus
+	for effect in defender.get("statusEffects", []):
+		if effect.get("type", "") == "warHowl":
+			chance += float(effect.get("accuracyBonus", 0.0))
+			break
 	var evasive_effect = null
 	for e in defender.get("statusEffects", []):
 		if e["type"] == "evasive":
@@ -1708,7 +2303,13 @@ func get_effective_hit_chance_breakdown(attacker: Dictionary, defender: Dictiona
 		var amount: float = evasive_effect["amount"]
 		breakdown.append({"label": "Esquiva (habilidade)", "delta": -amount})
 		chance -= amount
-	if item.has("mpCost"):
+	for e in defender.get("statusEffects", []):
+		if e.get("type", "") == "heronStance":
+			var stance_evasion: float = float(e.get("evasion", 0.0))
+			breakdown.append({"label": "Postura da Garça", "delta": -stance_evasion})
+			chance -= stance_evasion
+			break
+	if item.has("mpCost") and int(item.get("mpCost", 0)) > 0:
 		var magic_evasion: float = defender.get("magicEvasion", 0.0)
 		if magic_evasion > 0.0:
 			breakdown.append({"label": "Resistência mágica", "delta": -magic_evasion})
@@ -1842,16 +2443,24 @@ func _maybe_trigger_ranged_melee_counter(attacker: Dictionary, defender: Diction
 ## chamar decide quando a ação termina (algumas habilidades acertam vários
 ## alvos com um resolve_single_hit cada, uma finalize_action só no fim).
 func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictionary, is_counter_attack: bool = false) -> bool:
+	# Os ataques recebidos pela dupla causam dano ao HP da Vestruz.
+	if defender.get("mountedOn", "") != "":
+		var carrying_mount = mount_of(defender)
+		if carrying_mount != null:
+			defender = carrying_mount
 	if defender.get("caged", false):
 		var caged_word := "preso" if defender.get("spriteKey", "") == CAGED_BARDO_KEY else "presa"
 		_log("%s está %s na gaiola e imune a qualquer dano!" % [defender["name"], caged_word])
 		return false
-	var is_weapon_attack: bool = not item.has("mpCost")
+	if _has_status(defender, "invulnerable"):
+		_log("%s está intocável por Fingir de Morto e ignora %s!" % [defender["name"], item["name"]])
+		return true
+	var is_weapon_attack: bool = not item.has("mpCost") or int(item.get("mpCost", 0)) == 0
 	var damage_type := damage_type_of(item)
 	# Fada: só armas corpo a corpo (alcance 1) erram nela — à distância (ou
 	# marcadas "aerial") e magias sempre podem atingi-la. Calculado ANTES do
 	# corpo etéreo do Fantasma logo abaixo, que usa a MESMA distinção.
-	var is_melee_weapon: bool = is_weapon_attack and item["maxRange"] == 1 and not item.get("aerial", false)
+	var is_melee_weapon: bool = is_weapon_attack and item.get("maxRange", 1) == 1 and not item.get("aerial", false)
 	# Pedido do usuário: o corpo etéreo do Fantasma bloqueava QUALQUER ataque
 	# físico, inclusive Arco do Arqueiro/Arma de Fogo do Químico (ambos
 	# maxRange > 1, sem elemento no nome — caem no fallback "physical" de
@@ -1867,12 +2476,28 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 	if is_melee_weapon and defender.get("flying", false):
 		_log("%s ataca %s com %s, mas %s só pode ser atingida por ataques à distância ou magia!" % [attacker["name"], defender["name"], item["name"], defender["name"]])
 		return false
+	# Foco (Monge): enquanto o status estiver ativo, ataque FÍSICO não passa
+	# de jeito nenhum (mesmo "muro" do Fingir de Morto lá em cima, só que
+	# restrito ao tipo de dano) e magia chega pela metade — a metade é
+	# aplicada mais abaixo, junto do cálculo de dano.
+	var focus_active: bool = _has_status(defender, "focus")
+	if focus_active and damage_type == "physical":
+		_log("%s está em Foco e bloqueia completamente o ataque físico de %s!" % [defender["name"], attacker["name"]])
+		return false
 
 	var distance: int = manhattan(attacker, defender)
 	var attack_angle: String = get_attack_angle(attacker, defender)
 	# Buffs de "próximo ataque" são consumidos aqui, na tentativa em si.
 	var guaranteed_hit: bool = attacker.get("guaranteedNextHit", false)
 	var crit_bonus: float = attacker.get("critBonusNextAttack", 0.0)
+	# Saque Rápido (Samurai): mesmo efeito do Tiro Certeiro (100% de acerto e
+	# +crítico no próximo ataque), mas SÓ vale para golpe de espada (a Espada
+	# ou uma habilidade marcada "usesSword"). Qualquer outro ataque — o Arco,
+	# por exemplo — não gasta o saque.
+	if attacker.get("quickDrawNextSword", false) and (item.get("name", "") == "Espada" or item.get("usesSword", false)):
+		guaranteed_hit = true
+		crit_bonus += float(attacker.get("quickDrawCritBonus", 0.0))
+		attacker["quickDrawNextSword"] = false
 	var one_shot_damage_bonus: int = attacker.get("oneShotDamageBonus", 0)
 	# `.get(key, default)` só cai no default quando a CHAVE não existe — mas
 	# um ataque anterior pode ter deixado essa chave com valor `null`
@@ -1888,6 +2513,13 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 	# regra da Flecha de Fogo, trocando queimadura por lentidão).
 	var bonus_always_slow_turns: int = attacker.get("slowNextAttackAlwaysTurns", 0)
 	var bonus_always_slow_amount: int = attacker.get("slowNextAttackAlwaysAmount", 0)
+	var pending_steal: String = String(attacker.get("stealNextAttack", ""))
+	var steal_eligible: bool = is_weapon_attack and item.get("name", "") in ["Punhal", "Besta"] and pending_steal != ""
+	var steal_hp_bonus: int = rng.randi_range(3, 6) if steal_eligible and pending_steal == "steal-hp" else 0
+	var goblin_attack_eligible: bool = attacker.get("spriteKey", "") == "goblin" and is_weapon_attack and item.get("name", "") in ["Adaga", "Funda"]
+	var goblin_low_blow: bool = goblin_attack_eligible and attacker.get("goblinLowBlowNextAttack", false)
+	var goblin_poison: bool = goblin_attack_eligible and attacker.get("goblinPoisonNextAttack", false)
+	var goblin_sand: bool = goblin_attack_eligible and attacker.get("goblinSandNextAttack", false)
 	# Flecha de Fogo/Flecha de Gelo + Tiro Rápido: se ainda sobra um disparo
 	# bônus DEPOIS deste, o buff da flecha elemental não reseta ainda.
 	var keep_arrow_buff_for_bonus_shot: bool = one_shot_damage_bonus_source in ["Flecha de Fogo", "Flecha de Gelo"] and attacker.get("bonusAttacksRemaining", 0) > 0
@@ -1899,9 +2531,15 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 		attacker["burnNextAttackAlwaysTurns"] = 0
 		attacker["slowNextAttackAlwaysTurns"] = 0
 		attacker["slowNextAttackAlwaysAmount"] = 0
-	attacker["doubleRangeNextAttack"] = false
-	attacker["weakeningStrikeNextAttack"] = false
-	attacker["burnNextAttackTurns"] = 0
+		attacker["doubleRangeNextAttack"] = false
+		attacker["weakeningStrikeNextAttack"] = false
+		attacker["burnNextAttackTurns"] = 0
+	if steal_eligible:
+		attacker["stealNextAttack"] = ""
+	if goblin_attack_eligible:
+		attacker["goblinLowBlowNextAttack"] = false
+		attacker["goblinPoisonNextAttack"] = false
+		attacker["goblinSandNextAttack"] = false
 
 	if bonus_always_burn_turns > 0:
 		if is_on_water(defender):
@@ -1916,10 +2554,12 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 		_log("%s fica mais lento(a) com a Flecha de Gelo, acertando ou não! -%d de agilidade por %d turno(s)." % [defender["name"], bonus_always_slow_amount, bonus_always_slow_turns])
 
 	var hit_chance = 1.0 if guaranteed_hit else get_effective_hit_chance(attacker, defender, item, distance)
-	var is_hit: bool = false if hit_chance == null else (rng.randf() < float(hit_chance))
+	var hit_roll: float = 1.0 if hit_chance == null else rng.randf()
+	var is_hit: bool = false if hit_chance == null else (hit_roll < float(hit_chance))
 
 	if not is_hit:
 		_log("%s atacou %s com %s e errou!" % [attacker["name"], defender["name"], item["name"]])
+		_try_heron_counter(attacker, defender, item, hit_chance, hit_roll, is_counter_attack)
 		_maybe_trigger_ranged_melee_counter(attacker, defender, item, distance, is_counter_attack)
 		return false
 
@@ -1937,6 +2577,10 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 			break
 	var fury_bonus: int = fury_effect["damageBonus"] if fury_effect != null else 0
 	var song_damage_bonus: int = int(bard_inspiration_bonus(attacker, "damageBonus"))
+	var war_howl_bonus: int = 0
+	for effect in attacker.get("statusEffects", []):
+		if effect.get("type", "") == "warHowl":
+			war_howl_bonus += int(effect.get("damageBonus", 0))
 	# Redução de dano recebido, aplicada por último (depois do crítico): o
 	# Defender (postura, guarding) soma com a redução passiva (sempre ativa,
 	# ex: Guerreiro). Só vale pra dano de golpe direto; dano de status por
@@ -1947,8 +2591,21 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 			guard_effect = e
 			break
 	var damage_reduction: int = (guard_effect["damageReduction"] if guard_effect != null else 0) + defender.get("passiveDamageReduction", 0)
+	var defense_down: int = 0
+	for effect in defender.get("statusEffects", []):
+		if effect.get("type", "") == "defenseDown": defense_down += int(effect.get("amount", 0))
+	var marked_bonus: int = 0
+	for effect in defender.get("statusEffects", []):
+		if effect.get("type", "") == "marked":
+			marked_bonus += int(effect.get("damageBonus", 1))
 	var crit_multiplier: int = item["critMultiplier"] if is_crit else 1
-	var damage: int = maxi(0, (base_damage + sneak_attack_bonus + one_shot_damage_bonus + fury_bonus + song_damage_bonus) * crit_multiplier - damage_reduction)
+	var damage: int = maxi(0, (base_damage + sneak_attack_bonus + one_shot_damage_bonus + fury_bonus + song_damage_bonus + war_howl_bonus + steal_hp_bonus + marked_bonus + defense_down) * crit_multiplier - damage_reduction)
+	if item.get("noDamage", false): damage = 0
+	# Guarda Quebrada (Quebra-Guarda do Samurai): cada ataque que acerta o
+	# alvo causa +1 de dano enquanto o status durar (um único +1: reaplicar só
+	# renova a duração, ver appliesGuardBroken mais abaixo).
+	elif _has_status(defender, "guardBroken"):
+		damage += 1
 	# Tiro Explosivo (Químico): o tiro em si vira dano de fogo pra fins de
 	# afinidade elemental (cura Fogo Vivo/Homem de Lava, dobra em Gelo) —
 	# a arma de base continua física (ver damageType do firearm), só esse
@@ -1980,8 +2637,21 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 	# só metade do dano de gelo, arredondado pra baixo — independe de
 	# elementAffinity (que é opt-in só pras criaturas de fogo) e de nome de
 	# unidade/habilidade, só do tipo elemental do golpe.
-	if defender.get("undead", false) and affinity_damage_type == "ice":
-		damage = int(floor(damage * 0.5))
+	# Resistência de 50% removida: mortos-vivos recebem dano elemental normal.
+	# Pedido do usuário: morto-vivo resiste a ATAQUE (arma — Flecha/Besta/
+	# Espada/Punhal/Cajado e qualquer outra arma física, `is_weapon_attack`
+	# já genérico no topo desta função), sofrendo só metade do dano; magia/
+	# habilidade (qualquer item com mpCost, mesmo custando 0) continua
+	# causando o dano cheio. Empilha com a resistência a gelo acima quando os
+	# dois se aplicam (ex.: uma arma de gelo).
+	# Resistência de 50% removida: ataques físicos também causam dano normal.
+	# Foco (Monge): magia passa, mas com metade do dano (arredondado pra
+	# baixo) — depois de crítico/afinidade elemental e antes de descontar do
+	# HP, o mesmo lugar onde a redução do Defender já entrou.
+	if focus_active and damage > 0:
+		var damage_before_focus := damage
+		damage = int(floor(damage / 2.0))
+		_log("%s está em Foco e sofre só metade do dano mágico (%d em vez de %d)." % [defender["name"], damage, damage_before_focus])
 	var hp_before_hit: int = int(defender["hp"])
 	defender["hp"] -= damage
 	var sneak_note: String = " (Ataque Furtivo!)" if sneak_attack_bonus > 0 else ""
@@ -2008,16 +2678,31 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 				var actual_heal := mini(healed, int(attacker["maxHp"]) - int(attacker["hp"]))
 				attacker["hp"] = mini(int(attacker["maxHp"]), int(attacker["hp"]) + healed)
 				_log("%s absorve %d HP com %s!" % [attacker["name"], actual_heal, item["name"]])
+	if steal_hp_bonus > 0:
+		var stolen_hp: int = mini(steal_hp_bonus, hp_before_hit)
+		var steal_heal: int = mini(stolen_hp, int(attacker["maxHp"]) - int(attacker["hp"]))
+		attacker["hp"] = mini(int(attacker["maxHp"]), int(attacker["hp"]) + stolen_hp)
+		_log("%s furta %d de HP com %s!" % [attacker["name"], steal_heal, item["name"]])
 
-	if item.has("appliesPoison"):
+	if item.has("appliesPoison") and rng.randf() < float(item.get("poisonChance", 1.0)):
 		var p: Dictionary = item["appliesPoison"]
 		add_status_effect(defender, {"type": "poison", "damageMin": p["damageMin"], "damageMax": p["damageMax"], "turnsLeft": p["turns"], "ctDrainPerTurn": p.get("ctDrainPerTurn")})
 		_log("%s foi envenenado!" % defender["name"])
+	if goblin_poison:
+		add_status_effect(defender, {"type": "poison", "damageMin": 1, "damageMax": 3, "turnsLeft": 3, "ctDrainPerTurn": 10})
+		_log("%s foi envenenado pela Poção Venenosa!" % defender["name"])
+	if goblin_low_blow:
+		add_status_effect(defender, {"type": "accuracyPenalty", "turnsLeft": 1, "amount": 0.2})
+		_log("%s sofre Golpe Baixo e perde 20%% de acerto!" % defender["name"])
+	if goblin_sand:
+		add_status_effect(defender, {"type": "accuracyPenalty", "turnsLeft": 1, "amount": 0.1})
+		add_status_effect(defender, {"type": "rangedRangePenalty", "turnsLeft": 1, "amount": 1})
+		_log("%s fica com areia nos olhos: -10%% de acerto e -1 de alcance à distância!" % defender["name"])
 	# Garra (Demônio das Chamas): mesmo padrão genérico de appliesPoison/
 	# appliesBurn, aplicando o status "bleed" já existente (usado hoje só
 	# pelo Golpe Debilitante do Ladino). Mortos-vivos não sangram, mesma
 	# regra já aplicada ao Golpe Debilitante.
-	if item.has("appliesBleed") and not defender.get("undead", false):
+	if item.has("appliesBleed") and not defender.get("undead", false) and rng.randf() < float(item["appliesBleed"].get("chance", 1.0)):
 		var bl: Dictionary = item["appliesBleed"]
 		add_status_effect(defender, {"type": "bleed", "damageMin": bl["damageMin"], "damageMax": bl["damageMax"], "turnsLeft": bl["turns"]})
 		_log("%s está sangrando!" % defender["name"])
@@ -2036,45 +2721,114 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 	if item.has("appliesDaze"):
 		add_status_effect(defender, {"type": "dazed", "turnsLeft": item["appliesDaze"]["turns"]})
 		_log("%s fica atordoado(a) pelo som! -10%% de chance de acerto nos próprios ataques por %d turno(s)." % [defender["name"], item["appliesDaze"]["turns"]])
+	if item.has("appliesAccuracyPenalty") and rng.randf() < float(item.get("accuracyPenaltyChance", 1.0)):
+		add_status_effect(defender, {"type": "accuracyPenalty", "turnsLeft": item.get("penaltyTurns", 1), "amount": item["appliesAccuracyPenalty"]})
+	if item.has("appliesRangedRangeReduction"):
+		add_status_effect(defender, {"type": "rangedRangePenalty", "turnsLeft": item.get("penaltyTurns", 1), "amount": item["appliesRangedRangeReduction"]})
+	if item.has("appliesMarked"):
+		var marked: Dictionary = item["appliesMarked"]
+		add_status_effect(defender, {"type": "marked", "turnsLeft": marked.get("turns", 2), "damageBonus": marked.get("damageBonus", 1)})
+	if item.has("appliesGuardBroken") and defender["hp"] > 0:
+		_replace_timed_status(defender, {"type": "guardBroken", "turnsLeft": int(item["appliesGuardBroken"].get("turns", 2))})
+		_log("%s fica com a Guarda Quebrada por %d turno(s): cada ataque que o acertar causa +1 de dano!" % [defender["name"], int(item["appliesGuardBroken"].get("turns", 2))])
+	if item.has("appliesRoot"):
+		add_status_effect(defender, {"type":"root", "turnsLeft":int(item["appliesRoot"].get("turns", 1)), "damageMin":0, "damageMax":0})
+		_log("%s fica imobilizado(a) por %d turno(s)!" % [defender["name"], item["appliesRoot"].get("turns", 1)])
+	if item.has("appliesDefenseReduction"):
+		var defense: Dictionary = item["appliesDefenseReduction"]
+		_replace_timed_status(defender, {"type":"defenseDown","turnsLeft":int(defense.get("turns", 2)),"amount":int(defense.get("amount", 2))})
+		_log("%s sofre Corrosão: defesa -%d por %d turno(s)." % [defender["name"], defense.get("amount", 2), defense.get("turns", 2)])
 	# ctDrainConfirmChance (Funda do Goblin) é uma SEGUNDA rolagem, além do
 	# acerto do golpe em si.
-	if item.has("appliesCtDrain"):
+	if item.has("appliesCtDrain") or item.has("appliesCtDrainMin"):
 		var confirm_chance: float = item.get("ctDrainConfirmChance", 1.0)
 		if rng.randf() < confirm_chance:
-			defender["ct"] = maxi(defender["ct"] - item["appliesCtDrain"], 0)
-			_log("%s perde %d de CT!" % [defender["name"], item["appliesCtDrain"]])
+			var ct_min: int = int(item.get("appliesCtDrainMin", item.get("appliesCtDrain", 0)))
+			var ct_max: int = int(item.get("appliesCtDrainMax", ct_min))
+			var ct_drained: int = mini(rng.randi_range(ct_min, ct_max), int(defender.get("ct", 0)))
+			defender["ct"] = maxi(defender.get("ct", 0) - ct_drained, 0)
+			_log("%s perde %d de CT!" % [defender["name"], ct_drained])
+			if item.has("appliesCtDrainMin") and ct_drained > 0:
+				attacker["ct"] = mini(attacker.get("ct", 0) + ct_drained, 100)
+				_log("%s recupera %d de CT roubado!" % [attacker["name"], ct_drained])
 	# Cauda (Dragão Vermelho): empurrão de golpe direto (não epicentro de
 	# explosão) — mesma direção do golpe (atacante -> defensor) e mesmo
 	# push_unit já usado pelo empurrão radial de área (apply_point_blast_
 	# knockback)/Ventania, que já pára no primeiro obstáculo/unidade/borda do
 	# mapa e nunca solta a unidade fora dos limites.
+	if (item.get("hitAndRun", false) or attacker.get("hitAndRun", false)) and defender["hp"] > 0:
+		if attacker.get("hasMoved", false):
+			attacker["moveRange"] += 2
+		else:
+			attacker["hasMoved"] = false
+		attacker["hitAndRun"] = false
+		_log("%s pode bater e correr após acertar!" % attacker["name"])
+	if (item.get("hitAndRun", false) or attacker.get("hitAndRun", false)) and defender["hp"] > 0:
+		if attacker.get("hasMoved", false): attacker["moveRange"] += 2
+		else: attacker["hasMoved"] = false
+		attacker["hitAndRun"] = false
+		_log("%s pode bater e correr após acertar!" % attacker["name"])
 	if item.has("knockback") and defender["hp"] > 0:
 		var push_dx: int = _signi(defender["x"] - attacker["x"])
 		var push_dy: int = _signi(defender["y"] - attacker["y"])
 		if push_dx != 0 or push_dy != 0:
 			push_unit(defender, push_dx, push_dy, item["knockback"]["distance"])
+	if item.get("hitAndRun", false) and defender["hp"] > 0:
+		if attacker.get("hasMoved", false):
+			attacker["moveRange"] += 2
+		else:
+			attacker["hasMoved"] = false
+		_log("%s pode bater e correr após acertar!" % attacker["name"])
 	# Cajado (Mago): dreno de MP vampírico — o atacante rouba, não só tira.
-	if item.has("appliesMpDrain") and defender.has("maxMp"):
-		var drained: int = mini(item["appliesMpDrain"], defender["mp"])
+	if (item.has("appliesMpDrain") or item.has("appliesMpDrainMin")) and defender.has("maxMp"):
+		var mp_min: int = int(item.get("appliesMpDrainMin", item.get("appliesMpDrain", 0)))
+		var mp_max: int = int(item.get("appliesMpDrainMax", mp_min))
+		var drained: int = mini(rng.randi_range(mp_min, mp_max), defender["mp"])
 		defender["mp"] -= drained
 		_log("%s perde %d de MP!" % [defender["name"], drained])
 		if drained > 0 and attacker.has("maxMp"):
 			attacker["mp"] = mini(attacker["mp"] + drained, attacker["maxMp"])
 			_log("%s recupera %d de MP roubado!" % [attacker["name"], drained])
+	if steal_eligible and pending_steal == "steal-mp" and defender.has("maxMp"):
+		var stolen_mp: int = mini(rng.randi_range(3, 6), int(defender.get("mp", 0)))
+		defender["mp"] = maxi(int(defender.get("mp", 0)) - stolen_mp, 0)
+		attacker["mp"] = mini(int(attacker.get("mp", 0)) + stolen_mp, int(attacker.get("maxMp", attacker.get("mp", 0))))
+		_log("%s furta %d de MP de %s!" % [attacker["name"], stolen_mp, defender["name"]])
+	if steal_eligible and pending_steal == "steal-ct":
+		var stolen_ct: int = mini(rng.randi_range(10, 40), int(defender.get("ct", 0)))
+		defender["ct"] = maxi(int(defender.get("ct", 0)) - stolen_ct, 0)
+		attacker["ct"] = mini(int(attacker.get("ct", 0)) + stolen_ct, 100)
+		_log("%s furta %d de CT de %s!" % [attacker["name"], stolen_ct, defender["name"]])
 	# Lentidão embutida na própria arma/magia (ex: Atropelar) — diferente do
 	# Golpe Debilitante (buff condicional no atacante): aqui é sempre que o
 	# golpe acertar. Reaproveita o status "weakened".
+	if item.get("kind", "") in ["creature-charge", "slime-slam"]:
+		item["appliesSlow"] = {"moveReduction": 1, "turns": (1 if item.get("kind", "") == "creature-charge" else 2)}
 	if item.has("appliesSlow"):
-		var slow_amount: int = mini(item["appliesSlow"]["moveReduction"], defender["moveRange"])
-		defender["moveRange"] -= slow_amount
-		add_status_effect(defender, {"type": "weakened", "turnsLeft": item["appliesSlow"]["turns"], "moveReduction": slow_amount})
+		var slow_amount: int = int(item["appliesSlow"]["moveReduction"])
+		var weakened_existing = null
+		for existing in defender.get("statusEffects", []):
+			if existing.get("type", "") == "weakened": weakened_existing = existing; break
+		if weakened_existing == null:
+			slow_amount = mini(slow_amount, defender["moveRange"])
+			defender["moveRange"] -= slow_amount
+			add_status_effect(defender, {"type": "weakened", "turnsLeft": item["appliesSlow"]["turns"], "moveReduction": slow_amount})
+		else:
+			slow_amount = int(weakened_existing.get("moveReduction", slow_amount))
+			weakened_existing["turnsLeft"] = item["appliesSlow"]["turns"]
 		_log("%s fica mais lento! -%d de deslocamento por %d turno(s)." % [defender["name"], slow_amount, item["appliesSlow"]["turns"]])
 	# Raio de Gelo: reduz agilidade (não deslocamento) — soma com usos
 	# futuros em vez de substituir.
 	if item.has("appliesSpeedReduction") and defender["hp"] > 0:
 		var amount: int = item["appliesSpeedReduction"]["amount"]
-		defender["speed"] -= amount
-		add_status_effect(defender, {"type": "slowed", "turnsLeft": item["appliesSpeedReduction"]["turns"], "speedReduction": amount})
+		var slowed_existing = null
+		for existing in defender.get("statusEffects", []):
+			if existing.get("type", "") == "slowed": slowed_existing = existing; break
+		if slowed_existing == null:
+			defender["speed"] -= amount
+			add_status_effect(defender, {"type": "slowed", "turnsLeft": item["appliesSpeedReduction"]["turns"], "speedReduction": amount})
+		else:
+			slowed_existing["turnsLeft"] = item["appliesSpeedReduction"]["turns"]
 		_log("%s fica mais lento(a)! -%d de agilidade por %d turno(s)." % [defender["name"], amount, item["appliesSpeedReduction"]["turns"]])
 	if item.has("appliesParalyzed") and defender["hp"] > 0:
 		add_status_effect(defender, {"type":"paralyzed", "turnsLeft":int(item["appliesParalyzed"].get("turns", 1))})
@@ -2083,6 +2837,14 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 	if defender["hp"] <= 0:
 		defender["hp"] = 0
 		_log("%s foi derrotado!" % defender["name"])
+		# O reembolso só entra em finalize_action, DEPOIS de descontar o custo
+		# de MP da própria habilidade (senão o teto de MP máximo engoliria o
+		# ganho quando o Samurai está com o MP cheio).
+		if int(item.get("restoresMpOnKill", 0)) > 0 and attacker.has("maxMp"):
+			attacker["mpRefundAfterCost"] = int(attacker.get("mpRefundAfterCost", 0)) + int(item["restoresMpOnKill"])
+
+	if defender["hp"] <= 0 and defender.get("riderName", "") != "":
+		_release_rider_on_mount_death(defender)
 
 	# Golpe Debilitante (Ladino): só aplica se o alvo sobreviveu ao golpe.
 	# Cada uso empilha um novo sangramento + nova redução de deslocamento.
@@ -2133,24 +2895,32 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 ## mesmo turno. bonusAttackWeaponRestriction (Tiro Rápido) exige a MESMA arma
 ## pro bônus — qualquer outra encerra a rodada ali, sem desfazer o golpe.
 func finalize_action(attacker: Dictionary, item: Dictionary) -> void:
-	var restriction = attacker.get("bonusAttackWeaponRestriction")
+	# Montaria: quem gasta CT/ação é o dono do turno (o cavaleiro, quando a
+	# Vestruz age carregando alguém); o MP sai de quem executa a habilidade.
+	var turn_unit := turn_owner(attacker)
+	var restriction = turn_unit.get("bonusAttackWeaponRestriction")
 	if restriction != null:
 		if item["name"] != restriction["name"]:
-			attacker["bonusAttacksRemaining"] = 0
-			attacker["bonusAttackWeaponRestriction"] = null
-			attacker["hasActed"] = true
-		elif attacker.get("bonusAttacksRemaining", 0) > 0:
-			attacker["bonusAttacksRemaining"] -= 1
+			turn_unit["bonusAttacksRemaining"] = 0
+			turn_unit["bonusAttackWeaponRestriction"] = null
+			turn_unit["hasActed"] = true
+		elif turn_unit.get("bonusAttacksRemaining", 0) > 0:
+			turn_unit["bonusAttacksRemaining"] -= 1
 		else:
-			attacker["hasActed"] = true
-			attacker["bonusAttackWeaponRestriction"] = null
-	elif attacker.get("bonusAttacksRemaining", 0) > 0:
-		attacker["bonusAttacksRemaining"] -= 1
+			turn_unit["hasActed"] = true
+			turn_unit["bonusAttackWeaponRestriction"] = null
+	elif turn_unit.get("bonusAttacksRemaining", 0) > 0:
+		turn_unit["bonusAttacksRemaining"] -= 1
 	else:
-		attacker["hasActed"] = true
-	attacker["ct"] -= item["ctCost"]
+		turn_unit["hasActed"] = true
+	turn_unit["ct"] -= item["ctCost"]
 	if item.get("mpCost", 0):
 		attacker["mp"] = maxi(attacker["mp"] - item["mpCost"], 0)
+	if int(attacker.get("mpRefundAfterCost", 0)) > 0:
+		var refund: int = mini(int(attacker["mpRefundAfterCost"]), int(attacker.get("maxMp", 0)) - int(attacker["mp"]))
+		attacker["mp"] = int(attacker["mp"]) + maxi(refund, 0)
+		attacker["mpRefundAfterCost"] = 0
+		_log("%s recupera %d MP por derrotar o alvo." % [attacker["name"], maxi(refund, 0)])
 
 func bard_inspiration_bonus(u: Dictionary, field: String):
 	for effect in u.get("statusEffects", []):
@@ -2212,6 +2982,7 @@ func stop_bard_song(caster: Dictionary) -> void:
 	caster.erase("bardSongCleanupPending")
 
 func cast_bard_song(caster: Dictionary, item: Dictionary) -> void:
+	record_area_action(caster, item, caster)
 	if is_bard_singing(caster) or caster.get("bardSongCleanupPending", false):
 		stop_bard_song(caster)
 	# "castTurn" (global_turn_count no instante da conjuração) é o que deixa
@@ -2255,11 +3026,15 @@ func process_bard_song_turn_end(caster: Dictionary) -> void:
 ## regeneração) rodam em apply_status_effects_at_turn_end, quando a unidade
 ## afetada ENCERRA o próprio turno — ver esse comentário para o porquê.
 func apply_status_effects_at_turn_start(u: Dictionary) -> void:
+	_update_goblin_cowardice(u)
 	if not u.has("statusEffects") or (u["statusEffects"] as Array).is_empty():
 		return
 	var effects: Array = (u["statusEffects"] as Array).duplicate()
 	for effect in effects:
 		var type: String = effect["type"]
+		if type == "accuracyPenalty" or type == "rangedRangePenalty" or type == "invulnerable":
+			effect["turnsLeft"] -= 1
+			continue
 		if type == "invisible" or type == "blinded" or type == "dazed":
 			effect["turnsLeft"] -= 1
 			if effect["turnsLeft"] <= 0:
@@ -2296,6 +3071,21 @@ func apply_status_effects_at_turn_start(u: Dictionary) -> void:
 			if effect["turnsLeft"] <= 0:
 				_log("%s não está mais na postura defensiva." % u["name"])
 			continue
+		if type == "focus":
+			effect["turnsLeft"] -= 1
+			if effect["turnsLeft"] <= 0:
+				_log("%s sai do Foco." % u["name"])
+			continue
+		if type == "heronStance":
+			effect["turnsLeft"] -= 1
+			if effect["turnsLeft"] <= 0:
+				_log("%s deixa a Postura da Garça." % u["name"])
+			continue
+		if type == "guardBroken":
+			effect["turnsLeft"] -= 1
+			if effect["turnsLeft"] <= 0:
+				_log("%s recupera a guarda." % u["name"])
+			continue
 		if type == "evasive":
 			effect["turnsLeft"] -= 1
 			if effect["turnsLeft"] <= 0:
@@ -2311,7 +3101,9 @@ func apply_status_effects_at_turn_start(u: Dictionary) -> void:
 			# A duração pertence ao ciclo da música do Bardo, não ao turno do alvo.
 			continue
 
-	u["statusEffects"] = (u["statusEffects"] as Array).filter(func(e): return e["turnsLeft"] > 0)
+	# Reencarnação é um selo permanente e, por isso, não possui turnsLeft.
+	# Efeitos temporários continuam sendo removidos normalmente.
+	u["statusEffects"] = (u["statusEffects"] as Array).filter(func(e): return e.get("turnsLeft", 1) > 0)
 
 ## Chamado quando uma unidade ENCERRA o próprio turno (advance_to_next_turn,
 ## para quem agiu normalmente; ou dentro do bloco de paralisia de
@@ -2341,6 +3133,11 @@ func apply_status_effects_at_turn_end(u: Dictionary) -> void:
 			if u["hp"] <= 0:
 				u["hp"] = 0
 				_log("%s foi derrotado!" % u["name"])
+			continue
+		if type == "dustBlind":
+			effect["turnsLeft"] -= 1
+			if effect["turnsLeft"] <= 0:
+				_log("%s não está mais com poeira nos olhos." % u["name"])
 			continue
 		if type == "regen":
 			var heal: int = rng.randi_range(effect["healMin"], effect["healMax"])
@@ -2381,7 +3178,8 @@ func apply_status_effects_at_turn_end(u: Dictionary) -> void:
 			u["hp"] = 0
 			_log("%s foi derrotado!" % u["name"])
 
-	u["statusEffects"] = (u["statusEffects"] as Array).filter(func(e): return e["turnsLeft"] > 0)
+	# Reencarnação permanece até ser consumida na morte do alvo.
+	u["statusEffects"] = (u["statusEffects"] as Array).filter(func(e): return e.get("turnsLeft", 1) > 0)
 	_check_black_slime_split(u)
 
 # --- Turnos / CT (game.js:5429-5440, 9603-9781) ------------------------------
@@ -2397,7 +3195,7 @@ func advance_ct_until_ready() -> Dictionary:
 	while true:
 		var ready: Array = []
 		for u in alive_units():
-			if u.get("caged", false): continue
+			if u.get("caged", false) or u.get("riderName", "") != "": continue
 			if u["ct"] >= GameConstants.CT_THRESHOLD:
 				ready.append(u)
 		if ready.size() > 0:
@@ -2408,7 +3206,7 @@ func advance_ct_until_ready() -> Dictionary:
 			)
 			return ready[0]
 		for u in alive_units():
-			if u.get("caged", false): continue
+			if u.get("caged", false) or u.get("riderName", "") != "": continue
 			u["ct"] = mini(u["ct"] + u["speed"], GameConstants.CT_THRESHOLD)
 	push_error("advance_ct_until_ready chamado sem nenhuma unidade viva")
 	return {}
@@ -2469,7 +3267,13 @@ func check_global_turn_limit() -> bool:
 
 ## A luta contra o Slime Negro na Torre é mais longa que as batalhas do
 ## campo. Centralizar o valor aqui mantém regra e HUD sempre sincronizadas.
+## Pedido do usuário: Modo PVP tem limite próprio de 300 turnos (times
+## montados pelo jogador podem ser bem mais tanques que o elenco padrão),
+## checado antes da regra de cenário — PVP pode rodar em qualquer mapa,
+## inclusive a Torre.
 func max_global_turns() -> int:
+	if pvp_custom_battle:
+		return 300
 	return 150 if scenario_id == ScenarioManager.TOWER else GameConstants.MAX_GLOBAL_TURNS
 
 ## Castelo/Montanha destruído decide a batalha na hora, mesmo com unidades
@@ -2530,6 +3334,8 @@ func note_unit_acted_this_round(u: Dictionary) -> void:
 	if currently_alive.is_empty():
 		return
 	for au in currently_alive:
+		if au.get("riderName", "") != "":
+			continue
 		if not round_acted_units.has(au["name"]):
 			return
 	round_acted_units = []
@@ -2593,6 +3399,12 @@ func apply_corpse_decay_tick(u: Dictionary) -> void:
 		u.erase("resurrectionTurns")
 		u.erase("_deathHandled")
 		u.erase("_boneExplosionHandled")
+		# Reencarnação é uso único (ver finalize_death_if_needed) — some o
+		# `resurrection` dinâmico junto, diferente do campo permanente do
+		# Zumbi (que nunca tem essa marca e continua revivendo pra sempre).
+		if u.get("_reincarnationSeal", false):
+			u.erase("resurrection")
+			u.erase("_reincarnationSeal")
 		_log("%s se levanta novamente com %d HP e %d MP!" % [u["name"], u["hp"], u["mp"]])
 		return
 	u["turnsSinceDeath"] += 1
@@ -2625,6 +3437,8 @@ func spawn_soul_at(x: int, y: int, hp_amount: int = 10, mp_amount: int = 5) -> v
 ## count como corpo normal) continua marcando `turnsSinceDeath` pra
 ## UnitToken.refresh() tocar a animação de morte e manter o cadáver visível.
 func finalize_death_if_needed(u: Dictionary) -> void:
+	if u["hp"] <= 0 and u.get("riderName", "") != "":
+		_release_rider_on_mount_death(u)
 	if u["hp"] > 0 or u.has("turnsSinceDeath") or u.get("_deathHandled", false):
 		return
 	if u.get("spriteKey", "") == "bardo":
@@ -2633,6 +3447,20 @@ func finalize_death_if_needed(u: Dictionary) -> void:
 	if u.get("boneExplosion", false) and not u.get("_boneExplosionHandled", false):
 		u["_boneExplosionHandled"] = true
 		_trigger_bone_explosion(u)
+	# Pedido do usuário: Reencarnação (selo lançado em vida, ver
+	# cast_reincarnation) consome o próprio selo na hora da morte e passa a
+	# tratar a unidade como se tivesse o campo `resurrection` do Zumbi (mesmo
+	# motor de apply_corpse_decay_tick), só que sempre 1 rodada depois e com
+	# metade do HP/MP — uso único, por isso erase() em vez de deixar a
+	# unidade "marcada pra sempre".
+	var has_reincarnation_seal: bool = (u.get("statusEffects", []) as Array).any(func(e): return e["type"] == "reincarnation")
+	if has_reincarnation_seal and not u.has("resurrection"):
+		u["statusEffects"] = (u["statusEffects"] as Array).filter(func(e): return e["type"] != "reincarnation")
+		u["resurrection"] = {"afterTurns": 1, "hpPercent": 0.5, "mpPercent": 0.5}
+		# Marca a origem como o selo (não o campo permanente do Zumbi) pra
+		# apply_corpse_decay_tick remover `resurrection` de volta depois de
+		# reviver — selo de uso único, não vira auto-ressurreição pra sempre.
+		u["_reincarnationSeal"] = true
 	if u.has("resurrection"):
 		u["turnsSinceDeath"] = 0
 		u["resurrectionTurns"] = 0
@@ -2668,6 +3496,11 @@ func _trigger_bone_explosion(skeleton: Dictionary) -> void:
 func begin_turn_for(u: Dictionary) -> void:
 	current_actor = u
 	global_turn_count += 1
+	# Hazard de mapa (não roteiro de campanha) — dispara em qualquer modo,
+	# inclusive PVP, ao contrário dos reforços abaixo.
+	maybe_trigger_desfiladeiro_wind()
+	# Cemitério: vale também no Modo PVP (é hazard do cenário, não roteiro).
+	maybe_spawn_graveyard_undead()
 	if not pvp_custom_battle:
 		maybe_spawn_tower_creature()
 		maybe_revive_village_archer()
@@ -2687,6 +3520,9 @@ func begin_turn_for(u: Dictionary) -> void:
 		maybe_spawn_lua_reinforcement_by_turn()
 		maybe_spawn_tower_floor4_living_fire_by_turn()
 	apply_status_effects_at_turn_start(u)
+	var ridden_mount = mount_of(u)
+	if ridden_mount != null:
+		apply_status_effects_at_turn_start(ridden_mount)
 	if not units.has(u):
 		begin_turn_for(advance_ct_until_ready())
 		return
@@ -2741,6 +3577,7 @@ func begin_turn_for(u: Dictionary) -> void:
 
 	u["hasMoved"] = false
 	u["hasActed"] = false
+	u["cannotMoveThisTurn"] = false
 	u["abilityUsedThisTurn"] = false
 	# Sem isso, o nome/tipo de habilidade usado num turno anterior nunca sai
 	# daqui — cast_self_ability bloqueava permanentemente qualquer reuso
@@ -2763,6 +3600,13 @@ func advance_to_next_turn() -> void:
 	# tick de dano no PRÓXIMO fim de turno desta unidade, não neste mesmo
 	# instante em que acabou de ser aplicado.
 	apply_status_effects_at_turn_end(finished_unit)
+	var finished_mount = mount_of(finished_unit)
+	if finished_mount != null:
+		apply_status_effects_at_turn_end(finished_mount)
+	for maybe_dead_mount in units:
+		if maybe_dead_mount["hp"] <= 0 and maybe_dead_mount.get("riderName", "") != "":
+			_release_rider_on_mount_death(maybe_dead_mount)
+	sync_mounts()
 	# Pedido do usuário: tíque da canção do Bardo (Dor/Cura/Inspiração/
 	# Distração) agora no FIM do turno do Bardo, não mais no início (ver
 	# process_bard_song_turn_end) — mesmo ponto de apply_status_effects_at_
@@ -2800,6 +3644,12 @@ func advance_to_next_turn() -> void:
 	finished_unit["guaranteedNextHit"] = false
 	finished_unit["critBonusNextAttack"] = 0
 	finished_unit["bonusAttacksRemaining"] = 0
+	finished_unit["extraMovesRemaining"] = 0
+	finished_unit["quickDrawNextSword"] = false
+	finished_unit["mpRefundAfterCost"] = 0
+	finished_unit["goblinLowBlowNextAttack"] = false
+	finished_unit["goblinPoisonNextAttack"] = false
+	finished_unit["goblinSandNextAttack"] = false
 
 	# Armadilhas: a contagem de 3 turnos só começa quando acionada.
 	traps = traps.filter(func(trap):
@@ -2834,7 +3684,7 @@ func _apply_end_turn_tile_hazard(u: Dictionary) -> void:
 		return
 	if end_turn_hazard.get("statusOnEndTurn", "") == "burned":
 		var fire_affinity: Dictionary = u.get("elementAffinity", {}).get("fire", {})
-		if fire_affinity.get("mode", "") == "heal":
+		if fire_affinity.get("mode", "") in ["heal", "immune"]:
 			# Pedido do usuário: personagem de fogo de corpo normal (1x1) que
 			# termina o turno sobre lava cura sempre exatamente 1 HP, não
 			# importa quantos quadrados de lava toque nem outra condição.
@@ -2872,7 +3722,9 @@ const ELEMENTAL_ARROW_KINDS := ["fire-arrow", "ice-arrow"]
 ## Tiro Certeiro (sempre só 2 habilidades no máximo) — fura o
 ## singleSelfAbilityPerTurn do Arqueiro só pra esses pares específicos.
 func is_self_ability_combo_allowed(u: Dictionary, item: Dictionary) -> bool:
-	var used: Array = u.get("selfAbilityKindsUsedThisTurn", [])
+	if item.get("kind", "") == "arrow-rain": return true
+	var used: Array = u.get("selfAbilityKindsUsedThisTurn", []).filter(func(k): return k != "arrow-rain")
+	if used.is_empty(): return true
 	if used.size() != 1:
 		return false
 	var used_kind = used[0]
@@ -2887,6 +3739,8 @@ func is_self_ability_combo_allowed(u: Dictionary, item: Dictionary) -> bool:
 ## por singleSelfAbilityPerTurn (Arqueiro: só uma habilidade de si mesmo por
 ## turno, salvo a combinação com Flecha de Fogo acima).
 func cast_self_ability(caster: Dictionary, item: Dictionary) -> void:
+	if item.get("kind", "") == "arrow-rain" and caster.get("mp", 0) < item.get("mpCost", 0): return
+	if item.get("kind", "") == "arrow-rain" and caster.get("arrowRainPrepared", false): return
 	if caster.get("singleSelfAbilityPerTurn", false) and caster.get("abilityUsedThisTurn", false) and not is_self_ability_combo_allowed(caster, item):
 		_log("%s já usou uma habilidade neste turno." % caster["name"])
 		return
@@ -2903,6 +3757,10 @@ func cast_self_ability(caster: Dictionary, item: Dictionary) -> void:
 	if caster.get("singleSelfAbilityPerTurn", false):
 		caster["abilityUsedThisTurn"] = true
 	match item["kind"]:
+		"arrow-rain":
+			caster["arrowRainPrepared"] = true
+			finish_free_self_action(caster, item)
+			_log("%s prepara Chuva de flechas." % caster["name"])
 		"bard-song-heal", "bard-song-inspiration", "bard-song-distraction", "bard-song-pain":
 			cast_bard_song(caster, item)
 		"invisibility":
@@ -2923,10 +3781,45 @@ func cast_self_ability(caster: Dictionary, item: Dictionary) -> void:
 			cast_regen_boost(caster, item)
 		"weakening-strike":
 			cast_weakening_strike(caster, item)
+		"low-blow":
+			caster["goblinLowBlowNextAttack"] = true
+			finish_free_self_action(caster, item)
+		"poison-potion":
+			caster["goblinPoisonNextAttack"] = true
+			finish_free_self_action(caster, item)
+		"sand-in-eyes":
+			caster["goblinSandNextAttack"] = true
+			finish_free_self_action(caster, item)
+		"steal-hp", "steal-mp", "steal-ct":
+			cast_steal(caster, item)
 		"defend":
 			cast_defend(caster, item)
+		"quick-draw":
+			cast_quick_draw(caster, item)
+		"heron-stance":
+			cast_heron_stance(caster, item)
+		"monk-focus":
+			cast_monk_focus(caster, item)
+		"monk-dash":
+			cast_monk_dash(caster, item)
+		"monk-meditate":
+			cast_monk_meditate(caster, item)
 		"evasive":
 			cast_evasive_maneuver(caster, item)
+		"hit-and-run":
+			caster["hitAndRun"] = true
+			_log("%s prepara Bater e Correr: o próximo acerto libera movimento extra." % caster["name"])
+			finish_free_self_action(caster, item)
+		"play-dead":
+			if caster.get("hasMoved", false):
+				_log("Fingir de Morto só pode ser usado antes de mover.")
+				return
+			add_status_effect(caster, {"type": "invulnerable", "turnsLeft": item.get("turns", 1)})
+			# Bloqueia movimento, mas mantém a ação de ataque disponível.
+			caster["hasMoved"] = true
+			caster["cannotMoveThisTurn"] = true
+			_log("%s finge de morto e fica intocável neste turno!" % caster["name"])
+			finish_free_self_action(caster, item)
 		"explosive-shot":
 			cast_explosive_shot(caster, item)
 		"fire-arrow":
@@ -2935,6 +3828,50 @@ func cast_self_ability(caster: Dictionary, item: Dictionary) -> void:
 			cast_ice_arrow(caster, item)
 		"vampire-bat-form":
 			cast_vampire_bat_form(caster, item)
+		"living-fire-self-destruct":
+			# Pedido do usuário: Autodestruição não fazia nada ao ser escolhida
+			# no menu — faltava "targetMode" (só a IA usava, chamando
+			# cast_living_fire_self_destruct direto, sem passar pela UI).
+			cast_living_fire_self_destruct(caster, item)
+		"rat-pack-call":
+			cast_rat_pack_call(caster, item)
+		"gnoll-war-howl":
+			cast_gnoll_war_howl(caster, item)
+		"snake-skin":
+			cast_snake_skin(caster, item)
+		"slime-jump":
+			pass
+
+func cast_rat_pack_call(caster: Dictionary, item: Dictionary) -> void:
+	for ally in team_units(caster["team"]):
+		if ally.get("hp", 0) <= 0 or ally.get("spriteKey", "") != "spd_rat": continue
+		if manhattan(caster, ally) > int(item.get("radius", 3)): continue
+		ally["ct"] = mini(100, int(ally.get("ct", 0)) + int(item.get("ctBonus", 15)))
+		_replace_timed_status(ally, {"type":"evasive","turnsLeft":int(item.get("turns", 2)),"amount":float(item.get("evasionBonus", 0.1))})
+		_log("%s ouve o Guincho da Ninhada e recebe +15 CT e +10%% de esquiva." % ally["name"])
+	finalize_action(caster, item)
+
+func cast_gnoll_war_howl(caster: Dictionary, item: Dictionary) -> void:
+	for ally in team_units(caster["team"]):
+		if ally.get("hp", 0) <= 0 or manhattan(caster, ally) > int(item.get("radius", 3)): continue
+		_replace_timed_status(ally, {"type":"warHowl","turnsLeft":int(item.get("turns", 2)),"damageBonus":int(item.get("damageBonus", 2)),"accuracyBonus":float(item.get("accuracyBonus", 0.1))})
+		_log("%s recebe o Uivo de Guerra: +2 dano e +10%% acerto." % ally["name"])
+	finalize_action(caster, item)
+
+func cast_snake_skin(caster: Dictionary, item: Dictionary) -> void:
+	var heal := mini(int(item.get("healMax", 5)), int(caster.get("maxHp", 0)) - int(caster.get("hp", 0)))
+	caster["hp"] = mini(int(caster.get("maxHp", 0)), int(caster.get("hp", 0)) + int(item.get("healMax", 5)))
+	var removable := ["poison", "bleed", "burned", "slowed", "weakened", "accuracyPenalty", "rangedRangePenalty", "defenseDown"]
+	caster["statusEffects"] = (caster.get("statusEffects", []) as Array).filter(func(effect): return not removable.has(effect.get("type", "")))
+	_replace_timed_status(caster, {"type":"evasive","turnsLeft":int(item.get("turns", 1)),"amount":float(item.get("evasionBonus", 0.15))})
+	_log("%s usa Troca de Pele, recupera %d HP e remove efeitos negativos." % [caster["name"], heal])
+	finalize_action(caster, item)
+
+func _replace_timed_status(unit: Dictionary, effect: Dictionary) -> void:
+	var effects: Array = unit.get("statusEffects", [])
+	effects = effects.filter(func(existing): return existing.get("type", "") != effect.get("type", ""))
+	effects.append(effect)
+	unit["statusEffects"] = effects
 
 ## Habilidades "livres": não gastam CT nem marcam hasActed, só MP — a
 ## unidade continua o turno normalmente depois de ativar.
@@ -3000,6 +3937,13 @@ func cast_weakening_strike(caster: Dictionary, item: Dictionary) -> void:
 	_log("%s usa %s: se o próximo ataque acertar, vai debilitar o alvo!" % [caster["name"], item["name"]])
 	finish_free_self_action(caster, item)
 
+func cast_steal(caster: Dictionary, item: Dictionary) -> void:
+	# Roubo é uma preparação, como as habilidades de flecha do Arqueiro:
+	# o efeito é aplicado no próximo ataque de Punhal ou Besta.
+	caster["stealNextAttack"] = item.get("kind", "")
+	_log("%s prepara %s para o próximo ataque de Punhal ou Besta!" % [caster["name"], item["name"]])
+	finish_free_self_action(caster, item)
+
 func cast_evasive_maneuver(caster: Dictionary, item: Dictionary) -> void:
 	var existing = null
 	for e in caster.get("statusEffects", []):
@@ -3028,6 +3972,20 @@ func cast_defend(caster: Dictionary, item: Dictionary) -> void:
 	_log("%s usa %s e reduz o dano recebido em 2 por %d turno(s)!" % [caster["name"], item["name"], item["turns"]])
 	finish_free_self_action(caster, item)
 
+# --- Monge: Foco, Dash, Meditar e Chute do Dragao. (ver autoload/rules/monk_rules.gd) ---
+func cast_monk_focus(caster: Dictionary, item: Dictionary) -> void: MonkRules.cast_monk_focus(self, caster, item)
+func cast_monk_dash(caster: Dictionary, item: Dictionary) -> void: MonkRules.cast_monk_dash(self, caster, item)
+## Status negativos que Meditar remove — mesma lista da Troca de Pele da
+## Cobra (cast_snake_skin) mais os que tiram o turno/atrapalham a mira
+## (paralisia, raízes, atordoamento, cegueira, marcação).
+const MONK_MEDITATE_REMOVABLE_STATUSES := ["poison", "bleed", "burned", "root", "paralyzed", "blinded", "dazed", "slowed", "weakened", "accuracyPenalty", "rangedRangePenalty", "defenseDown", "marked", "guardBroken", "dustBlind"]
+
+func cast_monk_meditate(caster: Dictionary, item: Dictionary) -> void: MonkRules.cast_monk_meditate(self, caster, item)
+# --- Samurai: Saque Rapido, Postura da Garca, Corte Iaijutsu, Corte Crescente e requisitos de uso de habilidades. (ver autoload/rules/samurai_rules.gd) ---
+func cast_heron_stance(caster: Dictionary, item: Dictionary) -> void: SamuraiRules.cast_heron_stance(self, caster, item)
+func _try_heron_counter(attacker: Dictionary, defender: Dictionary, item: Dictionary, hit_chance: Variant, hit_roll: float, is_counter_attack: bool) -> void: SamuraiRules._try_heron_counter(self, attacker, defender, item, hit_chance, hit_roll, is_counter_attack)
+func item_requirements_met(u: Dictionary, item: Dictionary) -> bool: return SamuraiRules.item_requirements_met(self, u, item)
+func cast_quick_draw(caster: Dictionary, item: Dictionary) -> void: SamuraiRules.cast_quick_draw(self, caster, item)
 func cast_agility(caster: Dictionary, item: Dictionary) -> void:
 	# A habilidade pode ser usada antes OU depois do ataque normal. Antes do
 	# primeiro golpe, guardamos um ataque bônus para finalize_action consumir.
@@ -3358,6 +4316,28 @@ func cast_root_spell(caster: Dictionary, target: Dictionary, spell: Dictionary) 
 		_log("%s prende %s com %s!" % [caster["name"], target["name"], spell["name"]])
 	finalize_action(caster, spell)
 
+## Pedido do usuário: Reencarnação (Maga/Xamã/Fada/Lich). Marca um alvo VIVO
+## (unit_at só devolve unidades vivas — mesma garantia de "não pode ser
+## lançada sobre um cadáver" sem checagem extra) com o status "reincarnation"
+## (sem turnsLeft: fica indefinidamente até ser consumido — nenhum laço de
+## decaimento de status reconhece esse tipo, ver apply_status_effects_at_*).
+## finalize_death_if_needed é quem consome o selo na hora da morte, tratando
+## a unidade como se tivesse o campo `resurrection` do Zumbi (mesmo motor:
+## apply_corpse_decay_tick), só que sempre com 1 rodada e metade do HP/MP.
+func cast_reincarnation(caster: Dictionary, target: Dictionary, spell: Dictionary) -> void:
+	set_facing_towards(caster, target)
+	if blocked_by_invisibility(spell, target):
+		_log("%s tenta marcar %s com %s, mas %s está invisível!" % [caster["name"], target["name"], spell["name"], target["name"]])
+		finalize_action(caster, spell)
+		return
+	var is_hit: bool = rng.randf() < float(get_effective_hit_chance(caster, target, spell, manhattan(caster, target)))
+	if not is_hit:
+		_log("%s lança %s em %s e erra!" % [caster["name"], spell["name"], target["name"]])
+	else:
+		add_status_effect(target, {"type": "reincarnation"})
+		_log("%s marca %s com %s!" % [caster["name"], target["name"], spell["name"]])
+	finalize_action(caster, spell)
+
 func _signi(n: int) -> int:
 	if n > 0:
 		return 1
@@ -3466,6 +4446,23 @@ func perform_terrain_attack(attacker: Dictionary, tile: Dictionary, item: Dictio
 ## turnos (15, 17, 19...) com 25% de chance. A criatura entra pela escada do
 ## topo; se a casa estiver ocupada, aquela tentativa é perdida. Os argumentos
 ## opcionais existem para testes determinísticos e não são usados pelo jogo.
+# --- Cemitério: mortos-vivos selvagens (terceiro time) -----------------------
+const GRAVEYARD_SPAWN_INTERVAL := 10
+const GRAVEYARD_SPAWN_CHANCE := 0.25
+## Distribuição do sorteio: 40% Zumbi, 30% Esqueleto, 15% Fantasma, 10% Vampiro,
+## 5% Lich (limites acumulados).
+const GRAVEYARD_UNDEAD_TABLE := [["zombie", 0.40], ["skeleton", 0.70], ["ghost", 0.85], ["vampire", 0.95], ["lich", 1.0]]
+const GRAVEYARD_UNDEAD_NAMES := {"zombie": "Zumbi", "skeleton": "Esqueleto", "ghost": "Fantasma", "vampire": "Vampiro", "lich": "Lich"}
+var graveyard_spawn_count := 0
+
+static func graveyard_undead_kind_for_roll(roll: float) -> String:
+	for entry in GRAVEYARD_UNDEAD_TABLE:
+		if roll < float(entry[1]):
+			return String(entry[0])
+	return "lich"
+
+# --- Cemiterio: mortos-vivos selvagens (terceiro time) e a mira do time neutro. (ver autoload/rules/graveyard_rules.gd) ---
+func maybe_spawn_graveyard_undead(chance_roll: float = -1.0, kind_roll: float = -1.0) -> Variant: return GraveyardRules.maybe_spawn_graveyard_undead(self, chance_roll, kind_roll)
 func maybe_spawn_tower_creature(chance_roll: float = -1.0, creature_roll: float = -1.0) -> Variant:
 	if scenario_id != ScenarioManager.TOWER or global_turn_count < 15 or (global_turn_count - 15) % 5 != 0:
 		return null
@@ -3572,11 +4569,23 @@ static func _tower_creature_templates() -> Dictionary:
 	var sting := {"name":"Picada","icon":"🐍","ctCost":50,"damageMin":1,"damageMax":3,"critMultiplier":1,"critChance":0.0,"hitChance":0.9,"minRange":1,"maxRange":1,"appliesPoison":{"damageMin":1,"damageMax":3,"turns":3,"ctDrainPerTurn":10},"sfx":"poison","swing":"stab"}
 	var spear := {"name":"Lança","icon":"🔱","ctCost":50,"damageMin":3,"damageMax":6,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":1,"maxRange":1,"sfx":"melee","swing":"stab"}
 	var throw_spear := {"name":"Arremessar Lança","icon":"🔱","ctCost":50,"damageMin":2,"damageMax":5,"critMultiplier":1,"critChance":0.0,"hitChance":0.7,"minRange":2,"maxRange":5,"projectile":"arrow","sfx":"ranged"}
+	var rat_septic := {"name":"Mordida Séptica","icon":"🦷","kind":"creature-septic-bite","ctCost":35,"mpCost":0,"damageMin":2,"damageMax":4,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":1,"maxRange":1,"appliesBleed":{"damageMin":1,"damageMax":1,"turns":2,"chance":0.35},"targetMode":"enemy","sfx":"melee","swing":"stab","tooltipNote":"35% de chance de causar Sangramento: 1 de dano por 2 turnos."}
+	var rat_charge := {"name":"Investida Rasteira","icon":"🐀","kind":"creature-charge","ctCost":45,"mpCost":2,"damageMin":3,"damageMax":5,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":1,"maxRange":3,"targetMode":"charge","sfx":"melee","swing":"stab","tooltipNote":"Avança até 3 quadrados em linha reta e reduz MOV em 1 por 1 turno."}
+	var rat_call := {"name":"Guincho da Ninhada","icon":"📣","kind":"rat-pack-call","ctCost":55,"mpCost":5,"minRange":0,"maxRange":0,"targetMode":"self","radius":3,"ctBonus":15,"evasionBonus":0.1,"turns":2,"sfx":"nature","tooltipNote":"Ratos aliados no raio 3 recebem +15 CT e +10% de esquiva por 2 turnos."}
+	var snake_bite := {"name":"Bote Venenoso","icon":"🐍","kind":"creature-poison-bite","ctCost":45,"mpCost":3,"damageMin":3,"damageMax":5,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":1,"maxRange":2,"targetMode":"enemy","poisonChance":0.7,"appliesPoison":{"damageMin":2,"damageMax":2,"turns":3},"sfx":"poison","swing":"stab","tooltipNote":"70% de chance de aplicar Veneno: 2 de dano por 3 turnos."}
+	var snake_constrict := {"name":"Constrição","icon":"🐍","kind":"snake-constrict","ctCost":60,"mpCost":5,"damageMin":2,"damageMax":4,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":1,"maxRange":1,"targetMode":"enemy","appliesRoot":{"turns":1},"appliesCtDrain":20,"sfx":"poison","swing":"crush","tooltipNote":"Imobiliza por 1 turno e remove 20 CT."}
+	var snake_skin := {"name":"Troca de Pele","icon":"✨","kind":"snake-skin","ctCost":50,"mpCost":6,"targetMode":"self","healMin":5,"healMax":5,"evasionBonus":0.15,"turns":1,"sfx":"heal","tooltipNote":"Recupera 5 HP, remove um efeito negativo e concede +15% de esquiva até a próxima ação."}
+	var gnoll_axe := {"name":"Machado Serrilhado","icon":"🪓","kind":"creature-serrated-axe","ctCost":55,"mpCost":0,"damageMin":6,"damageMax":9,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":1,"maxRange":1,"targetMode":"enemy","appliesBleed":{"damageMin":2,"damageMax":2,"turns":2},"sfx":"melee","swing":"slash","tooltipNote":"Aplica Sangramento: 2 de dano por 2 turnos."}
+	var gnoll_charge := {"name":"Investida de Caça","icon":"🐺","kind":"gnoll-hunt-charge","ctCost":65,"mpCost":4,"damageMin":7,"damageMax":10,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":1,"maxRange":3,"targetMode":"charge","knockback":{"distance":1,"blockedExtraDamage":2},"sfx":"melee","swing":"slash","tooltipNote":"Avança, causa dano e empurra 1 quadrado; se bloqueado, causa +2 dano."}
+	var gnoll_howl := {"name":"Uivo de Guerra","icon":"🐺","kind":"gnoll-war-howl","ctCost":50,"mpCost":6,"targetMode":"self","radius":3,"damageBonus":2,"accuracyBonus":0.1,"turns":2,"sfx":"nature","tooltipNote":"Aliados no raio 3 recebem +2 dano e +10% acerto por 2 turnos."}
+	var slime_slam := {"name":"Pancada Viscosa","icon":"💥","kind":"slime-slam","ctCost":45,"mpCost":0,"damageMin":4,"damageMax":6,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":1,"maxRange":1,"targetMode":"enemy","appliesSpeedReduction":{"amount":1,"turns":2},"sfx":"melee","swing":"crush","tooltipNote":"Reduz MOV em 1 por 2 turnos."}
+	var slime_spit := {"name":"Cuspe Ácido","icon":"🧪","kind":"slime-acid-spit","ctCost":55,"mpCost":5,"damageMin":3,"damageMax":5,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":1,"maxRange":3,"targetMode":"enemy","appliesDefenseReduction":{"amount":2,"turns":2},"projectile":"poison","sfx":"poison","tooltipNote":"Reduz a defesa em 2 por 2 turnos."}
+	var slime_jump := {"name":"Salto Gelatinoso","icon":"🟢","kind":"slime-jump","ctCost":65,"mpCost":7,"damageMin":5,"damageMax":8,"critMultiplier":1,"critChance":0.0,"hitChance":0.8,"minRange":1,"maxRange":3,"targetMode":"slime-jump","areaRadius":1,"knockback":{"distance":1},"sfx":"melee","tooltipNote":"Salta até 3 quadrados; o impacto em cruz empurra os atingidos."}
 	return {
-		"rat":{"name":"Rato","team":"enemy","hp":5,"maxHp":5,"moveRange":3,"speed":9,"ct":0,"mp":0,"maxMp":0,"hasMoved":false,"hasActed":false,"statusEffects":[],"facing":{"dx":0,"dy":1},"spriteKey":"spd_rat","weapons":[bite],"spells":[]},
-		"slime":{"name":"Slime","team":"enemy","hp":10,"maxHp":10,"moveRange":3,"speed":10,"ct":0,"mp":0,"maxMp":0,"hasMoved":false,"hasActed":false,"statusEffects":[],"facing":{"dx":0,"dy":1},"spriteKey":"spd_slime","weapons":[slam],"spells":[]},
-		"snake":{"name":"Cobra","team":"enemy","hp":10,"maxHp":10,"moveRange":3,"speed":10,"ct":0,"mp":0,"maxMp":0,"hasMoved":false,"hasActed":false,"statusEffects":[],"facing":{"dx":0,"dy":1},"innateEvasion":0.1,"spriteKey":"spd_snake","weapons":[sting],"spells":[]},
-		"gnoll":{"name":"Gnoll","team":"enemy","hp":15,"maxHp":15,"moveRange":3,"speed":10,"ct":0,"mp":0,"maxMp":0,"hasMoved":false,"hasActed":false,"statusEffects":[],"facing":{"dx":0,"dy":1},"spriteKey":"spd_gnoll","weapons":[spear,throw_spear],"spells":[]},
+		"rat":{"name":"Rato","team":"enemy","hp":5,"maxHp":5,"moveRange":3,"speed":9,"ct":0,"mp":5,"maxMp":5,"hasMoved":false,"hasActed":false,"statusEffects":[],"facing":{"dx":0,"dy":1},"spriteKey":"spd_rat","weapons":[bite],"spells":[rat_septic,rat_charge,rat_call]},
+		"slime":{"name":"Slime","team":"enemy","hp":10,"maxHp":10,"moveRange":3,"speed":10,"ct":0,"mp":10,"maxMp":10,"hasMoved":false,"hasActed":false,"statusEffects":[],"facing":{"dx":0,"dy":1},"spriteKey":"spd_slime","weapons":[slam],"spells":[slime_slam,slime_spit,slime_jump]},
+		"snake":{"name":"Cobra","team":"enemy","hp":10,"maxHp":10,"moveRange":3,"speed":10,"ct":0,"mp":12,"maxMp":12,"hasMoved":false,"hasActed":false,"statusEffects":[],"facing":{"dx":0,"dy":1},"innateEvasion":0.1,"spriteKey":"spd_snake","weapons":[sting],"spells":[snake_bite,snake_constrict,snake_skin]},
+		"gnoll":{"name":"Gnoll","team":"enemy","hp":15,"maxHp":15,"moveRange":3,"speed":10,"ct":0,"mp":10,"maxMp":10,"hasMoved":false,"hasActed":false,"statusEffects":[],"facing":{"dx":0,"dy":1},"spriteKey":"spd_gnoll","weapons":[spear,throw_spear],"spells":[gnoll_axe,gnoll_charge,gnoll_howl]},
 		# Pedido do usuário: Morcego Vampiro invocado por Invocar Morcegos —
 		# "variação da Cobra" (mesmos stats/ataque/IA), só com Voo permanente
 		# (mesmo campo booleano que a Fada usa) e lifesteal 50% na Picada
@@ -3638,8 +4647,12 @@ func damage_structures_in_radius(center: Dictionary, radius: int, damage_min: in
 # --- Geometria de área/linha/cone (game.js:4182-4406, 8489-8521) -----------
 
 func compute_cardinal_rect_tiles(caster: Dictionary, target_tile: Dictionary, length: int, width: int) -> Array:
-	var dx: int = _signi(target_tile["x"] - caster["x"])
-	var dy: int = _signi(target_tile["y"] - caster["y"])
+	var dir := _cardinal_direction(caster, target_tile)
+	return _cardinal_rect_in_dir(caster, dir.x, dir.y, length, width)
+
+## Faixa saindo da borda do corpo: cada casa da borda (2 no 2x2) abre a própria
+## faixa de `width`, então o corpo grande cobre uma faixa mais larga.
+func _cardinal_rect_in_dir(caster: Dictionary, dx: int, dy: int, length: int, width: int) -> Array:
 	var perp_x: int = -dy
 	var perp_y: int = dx
 	var half: int = int(floor(float(width) / 2.0))
@@ -3647,14 +4660,16 @@ func compute_cardinal_rect_tiles(caster: Dictionary, target_tile: Dictionary, le
 	for i in range(width):
 		offsets.append(i - half)
 	var tiles: Array = []
+	var seen := {}
+	var lanes := body_lane_origins(caster, dx, dy)
 	for d in range(1, length + 1):
-		var base_x: int = caster["x"] + dx * d
-		var base_y: int = caster["y"] + dy * d
-		for offset in offsets:
-			var x: int = base_x + perp_x * offset
-			var y: int = base_y + perp_y * offset
-			if in_bounds(x, y):
-				tiles.append({"x": x, "y": y})
+		for lane in lanes:
+			for offset in offsets:
+				var x: int = lane["x"] + dx * d + perp_x * offset
+				var y: int = lane["y"] + dy * d + perp_y * offset
+				if in_bounds(x, y) and not seen.has(tile_key(x, y)):
+					seen[tile_key(x, y)] = true
+					tiles.append({"x": x, "y": y})
 	return tiles
 
 ## Mesma faixa de compute_cardinal_rect_tiles, só que nas 4 direções cardeais
@@ -3665,7 +4680,7 @@ func compute_cardinal_cross_tiles(caster: Dictionary, length: int, width: int) -
 	var seen := {}
 	var result := []
 	for d in dirs:
-		var rect := compute_cardinal_rect_tiles(caster, {"x": caster["x"] + d[0], "y": caster["y"] + d[1]}, length, width)
+		var rect := _cardinal_rect_in_dir(caster, d[0], d[1], length, width)
 		for t in rect:
 			var key := tile_key(t["x"], t["y"])
 			if seen.has(key):
@@ -3678,13 +4693,17 @@ func compute_cardinal_cross_tiles(caster: Dictionary, length: int, width: int) -
 ## profundidades 1 a 5 (maxDepth) — usado pelo Envenenamento/Ventania.
 func compute_cone_tiles_for_dir(u: Dictionary, dx: int, dy: int, max_depth: int) -> Array:
 	var result: Array = []
+	var seen := {}
+	var lanes := body_lane_origins(u, dx, dy)
 	for d in range(1, max_depth + 1):
 		var half: int = d - 1
-		for o in range(-half, half + 1):
-			var px: int = (u["x"] + dx * d) if dx != 0 else (u["x"] + o)
-			var py: int = (u["y"] + dy * d) if dy != 0 else (u["y"] + o)
-			if in_bounds(px, py):
-				result.append({"x": px, "y": py})
+		for lane in lanes:
+			for o in range(-half, half + 1):
+				var px: int = (lane["x"] + dx * d) if dx != 0 else (lane["x"] + o)
+				var py: int = (lane["y"] + dy * d) if dy != 0 else (lane["y"] + o)
+				if in_bounds(px, py) and not seen.has(tile_key(px, py)):
+					seen[tile_key(px, py)] = true
+					result.append({"x": px, "y": py})
 	return result
 
 ## União dos 4 cones — usado pra destacar todas as opções de mira de uma vez.
@@ -3706,6 +4725,29 @@ func compute_all_cone_tiles(u: Dictionary, max_depth: int) -> Array:
 ## tile — chamador decide o fallback (ver cast_heal_aoe etc: `?? [target_tile]`).
 func compute_aoe_area_tiles(caster: Dictionary, item: Dictionary, target_tile: Dictionary) -> Variant:
 	var mode: String = item.get("targetMode", "enemy")
+	if String(item.get("kind", "")).begins_with("bard-song"):
+		return _eligible_song_targets(caster, item.get("songKind", "") in ["heal", "inspiration"]).map(func(u): return {"x":u["x"], "y":u["y"]})
+	if mode == "arrow-rain":
+		if item.get("rainBaseMode", "") == "pierce-line": return arrow_rain_tiles(caster, item, target_tile)
+		var tiles: Array = []
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				var x: int = target_tile["x"] + dx
+				var y: int = target_tile["y"] + dy
+				if in_bounds(x, y): tiles.append({"x":x, "y":y})
+		return tiles
+	if mode in ["self-aoe", "self-attack"]:
+		var tiles: Array = []
+		for y in range(board_height):
+			for x in range(board_width):
+				var distance := manhattan(caster, {"x":x, "y":y})
+				if mode == "self-attack":
+					var box := _body_box(caster)
+					var out_x: int = maxi(maxi(box["left"] - x, x - box["right"]), 0)
+					var out_y: int = maxi(maxi(box["top"] - y, y - box["bottom"]), 0)
+					if maxi(out_x, out_y) == 1: tiles.append({"x":x, "y":y})
+				elif distance <= item.get("areaRadius", 2): tiles.append({"x":x, "y":y})
+		return tiles
 	if mode == "point-aoe":
 		var impact: Dictionary = target_tile if item.get("ignoresUnitObstruction", false) else resolve_obstructed_target(caster, target_tile)
 		var tiles := []
@@ -3715,13 +4757,7 @@ func compute_aoe_area_tiles(caster: Dictionary, item: Dictionary, target_tile: D
 					tiles.append({"x": x, "y": y})
 		return tiles
 	if mode == "line-aoe":
-		var dx: int = _signi(target_tile["x"] - caster["x"])
-		var dy: int = _signi(target_tile["y"] - caster["y"])
-		var length: int = maxi(abs(target_tile["x"] - caster["x"]), abs(target_tile["y"] - caster["y"]))
-		var tiles := []
-		for d in range(1, length + 1):
-			tiles.append({"x": caster["x"] + dx * d, "y": caster["y"] + dy * d})
-		return tiles
+		return _line_tiles_from_body(caster, target_tile)
 	if mode == "creeping-line" or mode == "flame-creeping-line" or mode == "cardinal-blast":
 		return compute_cardinal_rect_tiles(caster, target_tile, item["bandLength"], item["bandWidth"])
 	if mode == "cone-poison" or mode == "cone-fire" or mode == "cone-windstorm" or mode == "cone-ice":
@@ -3740,17 +4776,37 @@ func compute_aoe_area_tiles(caster: Dictionary, item: Dictionary, target_tile: D
 					tiles.append({"x": x, "y": y})
 		return tiles
 	if mode == "pierce-line":
-		var dx: int = _signi(target_tile["x"] - caster["x"])
-		var dy: int = _signi(target_tile["y"] - caster["y"])
-		var tiles := []
-		for d in range(1, item["maxRange"] + 1):
-			var x: int = caster["x"] + dx * d
-			var y: int = caster["y"] + dy * d
-			if not in_bounds(x, y):
-				break
-			tiles.append({"x": x, "y": y})
-		return tiles
+		var dir := _cardinal_direction(caster, target_tile)
+		return compute_pierce_line_tiles(caster, dir.x, dir.y, item["maxRange"])
+	if mode == "dust-square" or mode == "heal-cross":
+		var radius: int = int(item.get("areaRadius", 1))
+		var square_tiles: Array = []
+		for ty in range(int(caster["y"]) - radius, int(caster["y"]) + radius + 1):
+			for tx in range(int(caster["x"]) - radius, int(caster["x"]) + radius + 1):
+				if not in_bounds(tx, ty): continue
+				# heal-cross = só os 4 cardeais + o centro (losango de raio 1, sem diagonais).
+				if mode == "heal-cross" and absi(tx - int(caster["x"])) + absi(ty - int(caster["y"])) > radius: continue
+				square_tiles.append({"x": tx, "y": ty})
+		return square_tiles
+	if mode == "crescent-arc":
+		var arc_dir := _cardinal_direction(caster, target_tile)
+		return compute_crescent_tiles_for_dir(caster, arc_dir.x, arc_dir.y)
 	return null
+
+## Linha reta/diagonal (Relâmpago/Tronco) até `target_tile`, saindo da borda do
+## corpo: corpo grande cardeal cobre as 2 casas do lado, não só 1. Sem filtro
+## de limites, como sempre foi.
+func _line_tiles_from_body(caster: Dictionary, target_tile: Dictionary) -> Array:
+	var dir := body_direction(caster, target_tile)
+	var box := _body_box(caster)
+	var out_x: int = absi(int(target_tile["x"]) - (box["right"] if dir.x > 0 else box["left"])) if dir.x != 0 else 0
+	var out_y: int = absi(int(target_tile["y"]) - (box["bottom"] if dir.y > 0 else box["top"])) if dir.y != 0 else 0
+	var tiles: Array = []
+	var lanes := body_lane_origins(caster, dir.x, dir.y)
+	for d in range(1, maxi(out_x, out_y) + 1):
+		for lane in lanes:
+			tiles.append({"x": lane["x"] + dir.x * d, "y": lane["y"] + dir.y * d})
+	return tiles
 
 ## Terreno elevado (Castelo ou Casa) dá +1 de alcance a ataques à distância
 ## de quem está em cima — voar conta como "sempre elevado".
@@ -3808,14 +4864,15 @@ func compute_line_target_tiles(u: Dictionary, item: Dictionary, cardinal_only: b
 		dirs.append_array([[1, 1], [1, -1], [-1, 1], [-1, -1]])
 	var result: Array = []
 	for d in dirs:
-		var dist := 1
-		while dist <= item["maxRange"]:
-			var x: int = u["x"] + d[0] * dist
-			var y: int = u["y"] + d[1] * dist
-			if not in_bounds(x, y):
-				break
-			result.append({"x": x, "y": y})
-			dist += 1
+		for lane in body_lane_origins(u, d[0], d[1]):
+			var dist := 1
+			while dist <= item["maxRange"]:
+				var x: int = lane["x"] + d[0] * dist
+				var y: int = lane["y"] + d[1] * dist
+				if not in_bounds(x, y):
+					break
+				result.append({"x": x, "y": y})
+				dist += 1
 	return result
 
 ## Empurra `u` em linha reta (dx,dy) até `distance` quadrados; pára antes se
@@ -3835,6 +4892,7 @@ func push_unit(u: Dictionary, dx: int, dy: int, distance: int) -> bool:
 		u["x"] = final_x
 		u["y"] = final_y
 		_log("%s é empurrado(a) para (%d, %d)!" % [u["name"], final_x, final_y])
+		sync_mounts()
 	return moved
 
 ## Empurrão radial de explosão em área: cada atingido vai pra LONGE do ponto
@@ -3851,6 +4909,7 @@ func apply_point_blast_knockback(defender: Dictionary, impact: Dictionary, knock
 # --- Fase 3: habilidades de área/linha/cone (game.js:7876-7948, 8317-8578, 9097-9316) ---
 
 func cast_heal_aoe(caster: Dictionary, spell: Dictionary, target_tile: Dictionary) -> void:
+	record_area_action(caster, spell, target_tile)
 	set_facing_towards(caster, target_tile)
 	var tiles = compute_aoe_area_tiles(caster, spell, target_tile)
 	if tiles == null:
@@ -3868,6 +4927,7 @@ func cast_heal_aoe(caster: Dictionary, spell: Dictionary, target_tile: Dictionar
 ## em como a magia é montada), só chamando resolve_harm em vez de
 ## resolve_heal em cada alvo da área.
 func cast_inflict_wounds(caster: Dictionary, spell: Dictionary, target_tile: Dictionary) -> void:
+	record_area_action(caster, spell, target_tile)
 	set_facing_towards(caster, target_tile)
 	var tiles = compute_aoe_area_tiles(caster, spell, target_tile)
 	if tiles == null:
@@ -3880,6 +4940,7 @@ func cast_inflict_wounds(caster: Dictionary, spell: Dictionary, target_tile: Dic
 	finalize_action(caster, spell)
 
 func cast_regen_aoe(caster: Dictionary, spell: Dictionary, target_tile: Dictionary) -> void:
+	record_area_action(caster, spell, target_tile)
 	set_facing_towards(caster, target_tile)
 	var tiles = compute_aoe_area_tiles(caster, spell, target_tile)
 	if tiles == null:
@@ -3895,6 +4956,7 @@ func cast_regen_aoe(caster: Dictionary, spell: Dictionary, target_tile: Dictiona
 ## Poção de Cura/Regeneração em Área (heal-aoe/regen-aoe, areaRadius/alcance
 ## idênticos), restaurando MP em vez de HP em todos os atingidos.
 func cast_mana_aoe(caster: Dictionary, spell: Dictionary, target_tile: Dictionary) -> void:
+	record_area_action(caster, spell, target_tile)
 	set_facing_towards(caster, target_tile)
 	var tiles = compute_aoe_area_tiles(caster, spell, target_tile)
 	if tiles == null:
@@ -3910,6 +4972,7 @@ func cast_mana_aoe(caster: Dictionary, spell: Dictionary, target_tile: Dictionar
 ## de qualquer um atingido (aliado ou inimigo) — sem rolagem de acerto,
 ## sem dano. `tiles` já vem calculado pelo chamador (não recalcula aqui).
 func cast_antidote(caster: Dictionary, spell: Dictionary, tiles: Array) -> void:
+	record_area_action(caster, spell, caster, tiles)
 	var targets: Array = units_in_tiles(tiles)
 	var cured_any := false
 	for u in targets:
@@ -3927,6 +4990,7 @@ func cast_antidote(caster: Dictionary, spell: Dictionary, tiles: Array) -> void:
 ## desatualizada se o alvo se moveu) que nenhum tile da área está ocupado
 ## antes de instalar. Se bloqueada, não gasta CT/MP nem consome a ação.
 func cast_trap(caster: Dictionary, item: Dictionary, target_tile: Dictionary) -> void:
+	record_area_action(caster, item, target_tile)
 	var area_tiles = compute_aoe_area_tiles(caster, item, target_tile)
 	if area_tiles == null:
 		area_tiles = []
@@ -3941,7 +5005,11 @@ func cast_trap(caster: Dictionary, item: Dictionary, target_tile: Dictionary) ->
 	# "visible" pedido pelo usuário: a armadilha do Ladino fica visível pra
 	# todo mundo assim que instalada (mesmo padrão das armadilhas do
 	# ambiente/Torre, ver _setup_tower), não escondida até ser pisada.
-	traps.append({"tiles": area_tiles, "ownerTeam": caster["team"], "triggered": false, "turnsLeft": null, "visible": true})
+	# "ownerName"/"instant" pedido pelo usuário: só o próprio Ladino que a
+	# instalou é imune (aliados dele podem sofrer o dano normalmente, ver
+	# apply_trap_crossings) e ela some assim que alguém aciona e sofre o
+	# dano, em vez de ficar revelada por mais 3 turnos.
+	traps.append({"tiles": area_tiles, "ownerTeam": caster["team"], "ownerName": caster["name"], "instant": true, "triggered": false, "turnsLeft": null, "visible": true})
 	_log("%s instala uma %s na área!" % [caster["name"], item["name"]])
 	finalize_action(caster, item)
 
@@ -3953,6 +5021,7 @@ func cast_trap(caster: Dictionary, item: Dictionary, target_tile: Dictionary) ->
 ## clicado mesmo com alguém no meio do caminho. Acerta qualquer um dentro do
 ## raio, aliado ou inimigo.
 func cast_fireball(caster: Dictionary, spell: Dictionary, target_tile: Dictionary) -> void:
+	record_area_action(caster, spell, target_tile)
 	set_facing_towards(caster, target_tile)
 	var impact: Dictionary = target_tile if spell.get("ignoresUnitObstruction", false) else resolve_obstructed_target(caster, target_tile)
 	var hits: Array = []
@@ -3980,6 +5049,7 @@ func cast_fireball(caster: Dictionary, spell: Dictionary, target_tile: Dictionar
 ## resolve_single_hit (que já testa acerto/aplica appliesBleed/appliesPoison
 ## sozinha — nenhuma lógica de dano nova aqui).
 func cast_decay_pulse(caster: Dictionary, spell: Dictionary) -> void:
+	record_area_action(caster, spell, caster)
 	var impact := {"x": caster["x"], "y": caster["y"]}
 	var hits: Array = []
 	for u in alive_units():
@@ -4001,13 +5071,10 @@ func cast_decay_pulse(caster: Dictionary, spell: Dictionary) -> void:
 ## reaproveitam este mesmo resolvedor: percorre a linha reta/diagonal
 ## clicada, acertando todo mundo no caminho, aliado ou inimigo.
 func cast_lightning(caster: Dictionary, spell: Dictionary, target_tile: Dictionary) -> void:
+	record_area_action(caster, spell, target_tile)
 	set_facing_towards(caster, target_tile)
-	var dx: int = _signi(target_tile["x"] - caster["x"])
-	var dy: int = _signi(target_tile["y"] - caster["y"])
-	var length: int = maxi(abs(target_tile["x"] - caster["x"]), abs(target_tile["y"] - caster["y"]))
-	var line_tiles: Array = []
-	for d in range(1, length + 1):
-		line_tiles.append({"x": caster["x"] + dx * d, "y": caster["y"] + dy * d})
+	var line_tiles: Array = _line_tiles_from_body(caster, target_tile)
+	var length: int = line_tiles.size()
 	_log("%s lança %s, atingindo %d quadrado(s) em linha." % [caster["name"], spell["name"], length])
 	var hits: Array = units_in_tiles(line_tiles)
 	if hits.is_empty():
@@ -4022,6 +5089,7 @@ func cast_lightning(caster: Dictionary, spell: Dictionary, target_tile: Dictiona
 ## por obstrução). Quem for atingido fica paralisado por 1 turno (renova em
 ## vez de empilhar se já estava paralisado).
 func cast_freeze_aoe(caster: Dictionary, spell: Dictionary, target_tile: Dictionary) -> void:
+	record_area_action(caster, spell, target_tile)
 	set_facing_towards(caster, target_tile)
 	var tiles = compute_aoe_area_tiles(caster, spell, target_tile)
 	if tiles == null:
@@ -4057,6 +5125,7 @@ func cast_freeze_aoe(caster: Dictionary, spell: Dictionary, target_tile: Diction
 ## resolve_single_hit pra acerto/dano/crítico/dreno de CT e só cuida do
 ## empurrão por cima disso — direção sai do primeiro tile do cone.
 func cast_windstorm(caster: Dictionary, spell: Dictionary, cone_tiles: Array) -> void:
+	record_area_action(caster, spell, cone_tiles.back() if not cone_tiles.is_empty() else caster, cone_tiles)
 	if cone_tiles.is_empty():
 		finalize_action(caster, spell)
 		return
@@ -4077,6 +5146,7 @@ func cast_windstorm(caster: Dictionary, spell: Dictionary, cone_tiles: Array) ->
 ## Envenenamento (Xamã): acerta qualquer um dentro do cone (aliado ou
 ## inimigo), cada um com sua própria rolagem de acerto.
 func cast_poison_cone(caster: Dictionary, spell: Dictionary, cone_tiles: Array) -> void:
+	record_area_action(caster, spell, cone_tiles.back() if not cone_tiles.is_empty() else caster, cone_tiles)
 	if not cone_tiles.is_empty():
 		set_facing_towards(caster, cone_tiles[0])
 	var targets: Array = units_in_tiles(cone_tiles)
@@ -4096,6 +5166,7 @@ func cast_poison_cone(caster: Dictionary, spell: Dictionary, cone_tiles: Array) 
 ## tem sua própria rolagem de acerto (resolve_single_hit já aplica dano,
 ## crítico e appliesSpeedReduction, igual Raio de Gelo/Bomba de Gelo).
 func cast_ice_cone(caster: Dictionary, spell: Dictionary, cone_tiles: Array) -> void:
+	record_area_action(caster, spell, cone_tiles.back() if not cone_tiles.is_empty() else caster, cone_tiles)
 	if not cone_tiles.is_empty():
 		set_facing_towards(caster, cone_tiles[0])
 	var targets: Array = units_in_tiles(cone_tiles)
@@ -4109,6 +5180,7 @@ func cast_ice_cone(caster: Dictionary, spell: Dictionary, cone_tiles: Array) -> 
 ## direção escolhida (não só até o clique). Roubo de CT e imobilização são
 ## INCONDICIONAIS (independem do dano, que é hit-gated à parte).
 func cast_creeping_destruction(caster: Dictionary, spell: Dictionary, target_tile: Dictionary) -> void:
+	record_area_action(caster, spell, target_tile)
 	set_facing_towards(caster, target_tile)
 	var line_tiles = compute_aoe_area_tiles(caster, spell, target_tile)
 	if line_tiles == null:
@@ -4129,6 +5201,9 @@ func cast_creeping_destruction(caster: Dictionary, spell: Dictionary, target_til
 ## Labaredas da Salamandra: reutiliza exatamente a faixa/direção da
 ## Destruição Rastejante, mas cada alvo recebe somente a rolagem normal de
 ## fogo/Queimando; não herda o dreno de CT nem o enraizamento do Xamã.
+## Pedido do usuário: mesma regra de cast_fire_self_area/cast_fire_cone —
+## acerta qualquer um na área, cura em vez de ferir quem tiver afinidade
+## fire:heal.
 func cast_salamander_flame_wave(caster: Dictionary, spell: Dictionary, target_tile: Dictionary) -> void:
 	set_facing_towards(caster, target_tile)
 	var tiles = compute_aoe_area_tiles(caster, spell, target_tile)
@@ -4137,10 +5212,10 @@ func cast_salamander_flame_wave(caster: Dictionary, spell: Dictionary, target_ti
 	_log("%s lança %s pela faixa vulcânica!" % [caster["name"], spell["name"]])
 	var hit_any := false
 	for victim in units_in_tiles(tiles):
-		if victim != null and victim["team"] != caster["team"]:
+		if victim != null:
 			hit_any = true
 			resolve_single_hit(caster, victim, spell)
-	if not hit_any: _log("Não havia nenhum inimigo na área das labaredas.")
+	if not hit_any: _log("Não havia ninguém na área das labaredas.")
 	damage_trees_in_tiles(tiles, spell["damageMin"], spell["damageMax"])
 	damage_structures_in_tiles(tiles, spell["damageMin"], spell["damageMax"])
 	finalize_action(caster, spell)
@@ -4149,9 +5224,11 @@ func cast_salamander_flame_wave(caster: Dictionary, spell: Dictionary, target_ti
 ## que bandLength x bandWidth (3x3) numa direção só, e dano/empurrão são
 ## hit-gated normal (não incondicional). Empurrão na direção do arremesso.
 func cast_throw_log(caster: Dictionary, spell: Dictionary, target_tile: Dictionary) -> void:
+	record_area_action(caster, spell, target_tile)
 	set_facing_towards(caster, target_tile)
-	var dx: int = _signi(target_tile["x"] - caster["x"])
-	var dy: int = _signi(target_tile["y"] - caster["y"])
+	var throw_dir := _cardinal_direction(caster, target_tile)
+	var dx: int = throw_dir.x
+	var dy: int = throw_dir.y
 	var line_tiles = compute_aoe_area_tiles(caster, spell, target_tile)
 	if line_tiles == null:
 		line_tiles = []
@@ -4178,19 +5255,23 @@ func cast_throw_log(caster: Dictionary, spell: Dictionary, target_tile: Dictiona
 ## escolher a melhor, sem duplicar a lógica de raycast.
 func compute_pierce_line_tiles(caster: Dictionary, dx: int, dy: int, max_range: int) -> Array:
 	var line_tiles: Array = []
-	for d in range(1, max_range + 1):
-		var x: int = caster["x"] + dx * d
-		var y: int = caster["y"] + dy * d
-		if not in_bounds(x, y):
-			break
-		line_tiles.append({"x": x, "y": y})
+	for lane in body_lane_origins(caster, dx, dy):
+		for d in range(1, max_range + 1):
+			var x: int = lane["x"] + dx * d
+			var y: int = lane["y"] + dy * d
+			if not in_bounds(x, y):
+				break
+			line_tiles.append({"x": x, "y": y})
 	return line_tiles
 
 func cast_pierce_shot(caster: Dictionary, spell: Dictionary, target_tile: Dictionary) -> void:
+	record_area_action(caster, spell, target_tile)
+	if is_arrow_rain_attack(caster, spell):
+		cast_arrow_rain(caster, spell, target_tile)
+		return
 	set_facing_towards(caster, target_tile)
-	var dx: int = _signi(target_tile["x"] - caster["x"])
-	var dy: int = _signi(target_tile["y"] - caster["y"])
-	var line_tiles: Array = compute_pierce_line_tiles(caster, dx, dy, spell["maxRange"])
+	var pierce_dir := _cardinal_direction(caster, target_tile)
+	var line_tiles: Array = compute_pierce_line_tiles(caster, pierce_dir.x, pierce_dir.y, spell["maxRange"])
 	_log("%s atira %s, perfurando %d quadrado(s) em linha reta." % [caster["name"], spell["name"], line_tiles.size()])
 	var hits: Array = units_in_tiles(line_tiles)
 	if hits.is_empty():
@@ -4302,8 +5383,8 @@ func separate_living_unit_from_corpse(u, previous_tile, preferred_dx: int = 0, p
 ## Tiles inimigos alcançáveis pela Investida: só nas 4 direções cardeais,
 ## até 2x o próprio deslocamento; pára no primeiro ocupante do caminho — só
 ## vira alvo clicável se for inimigo (aliado no meio bloqueia sem virar alvo).
-func compute_charge_targets(u: Dictionary) -> Array:
-	var max_dist: int = u["moveRange"] * 2
+func compute_charge_targets(u: Dictionary, item: Dictionary = {}) -> Array:
+	var max_dist: int = int(item.get("maxRange", u["moveRange"] * 2))
 	var dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]]
 	var targets: Array = []
 	for d in dirs:
@@ -4342,9 +5423,70 @@ func cast_charge(caster: Dictionary, target: Dictionary, item: Dictionary) -> bo
 	set_facing_towards(caster, target)
 	apply_trap_crossings(caster, charge_path)
 	_log("%s avança numa investida contra %s!" % [caster["name"], target["name"]])
-	resolve_single_hit(caster, target, item)
+	var was_hit := resolve_single_hit(caster, target, item)
+	if was_hit and item.has("knockback") and target.get("hp", 0) > 0:
+		var moved := push_unit(target, dx, dy, int(item["knockback"].get("distance", 1)))
+		if not moved and item["knockback"].has("blockedExtraDamage"):
+			target["hp"] = maxi(0, int(target["hp"]) - int(item["knockback"]["blockedExtraDamage"]))
+			_log("%s está bloqueado(a) e sofre %d dano extra!" % [target["name"], item["knockback"]["blockedExtraDamage"]])
 	finalize_action(caster, item)
 	return true
+
+func cast_dragon_kick(caster: Dictionary, item: Dictionary, target_tile: Dictionary) -> bool: return MonkRules.cast_dragon_kick(self, caster, item, target_tile)
+func compute_iaijutsu_targets(u: Dictionary, item: Dictionary) -> Array: return SamuraiRules.compute_iaijutsu_targets(self, u, item)
+func compute_iaijutsu_range_tiles(u: Dictionary, item: Dictionary) -> Array: return SamuraiRules.compute_iaijutsu_range_tiles(self, u, item)
+func cast_iaijutsu(caster: Dictionary, target: Dictionary, item: Dictionary) -> bool: return SamuraiRules.cast_iaijutsu(self, caster, target, item)
+func compute_crescent_anchor_tiles(u: Dictionary) -> Array: return SamuraiRules.compute_crescent_anchor_tiles(self, u)
+func compute_crescent_tiles_for_dir(u: Dictionary, dx: int, dy: int) -> Array: return SamuraiRules.compute_crescent_tiles_for_dir(self, u, dx, dy)
+func cast_crescent_slash(caster: Dictionary, item: Dictionary, target_tile: Dictionary) -> void: SamuraiRules.cast_crescent_slash(self, caster, item, target_tile)
+const MOUNT_FALL_DAMAGE_MIN := 2
+const MOUNT_FALL_DAMAGE_MAX := 5
+
+# --- Montaria (Vestruz): montar/desmontar, fila de turnos da dupla, queda do cavaleiro e as habilidades da Vestruz. (ver autoload/rules/mount_rules.gd) ---
+func mount_of(rider: Dictionary) -> Variant: return MountRules.mount_of(self, rider)
+func rider_of(mount: Dictionary) -> Variant: return MountRules.rider_of(self, mount)
+func turn_owner(u: Dictionary) -> Dictionary: return MountRules.turn_owner(self, u)
+func can_mount(rider: Dictionary, mount: Dictionary) -> bool: return MountRules.can_mount(self, rider, mount)
+func mount_candidates(rider: Dictionary) -> Array: return MountRules.mount_candidates(self, rider)
+func mount_unit(rider: Dictionary, mount: Dictionary) -> bool: return MountRules.mount_unit(self, rider, mount)
+func dismount_tiles(rider: Dictionary) -> Array: return MountRules.dismount_tiles(self, rider)
+func dismount_unit(rider: Dictionary, tile: Dictionary) -> bool: return MountRules.dismount_unit(self, rider, tile)
+func sync_mounts() -> void: MountRules.sync_mounts(self)
+func _release_rider_on_mount_death(mount: Dictionary) -> void: MountRules._release_rider_on_mount_death(self, mount)
+func compute_vestruz_dash_tiles(u: Dictionary, item: Dictionary) -> Array: return MountRules.compute_vestruz_dash_tiles(self, u, item)
+func cast_vestruz_dash(caster: Dictionary, item: Dictionary, dest: Dictionary) -> bool: return MountRules.cast_vestruz_dash(self, caster, item, dest)
+func cast_dust_cloud(caster: Dictionary, item: Dictionary) -> void: MountRules.cast_dust_cloud(self, caster, item)
+func cast_vestruz_heal(caster: Dictionary, item: Dictionary) -> void: MountRules.cast_vestruz_heal(self, caster, item)
+func compute_slime_jump_targets(caster: Dictionary, item: Dictionary) -> Array:
+	var result: Array = []
+	for tile in compute_range_tiles(caster, item):
+		if occupant_at(tile["x"], tile["y"]) != null: continue
+		var terrain = terrain_at(tile["x"], tile["y"])
+		if terrain != null and BoardLayout.BLOCKING_TERRAIN_TYPES.has(terrain.get("type", "")): continue
+		result.append(tile)
+	return result
+
+func cast_slime_jump(caster: Dictionary, item: Dictionary, target_tile: Dictionary) -> void:
+	if occupant_at(target_tile["x"], target_tile["y"]) != null:
+		_log("%s não pode pousar no quadrado ocupado." % caster["name"])
+		return
+	caster["x"] = target_tile["x"]
+	caster["y"] = target_tile["y"]
+	caster["hasMoved"] = true
+	set_facing_towards(caster, target_tile)
+	_log("%s salta e aterrissa em (%d, %d)!" % [caster["name"], caster["x"], caster["y"]])
+	var tiles: Array = []
+	for d in [[1,0],[-1,0],[0,1],[0,-1]]:
+		var tile := {"x": caster["x"] + d[0], "y": caster["y"] + d[1]}
+		if in_bounds(tile["x"], tile["y"]): tiles.append(tile)
+	for target in units_in_tiles(tiles):
+		if target["team"] == caster["team"]: continue
+		var was_hit := resolve_single_hit(caster, target, item)
+		if was_hit and target.get("hp", 0) > 0:
+			var dx := _signi(target["x"] - caster["x"])
+			var dy := _signi(target["y"] - caster["y"])
+			push_unit(target, dx, dy, 1)
+	finalize_action(caster, item)
 
 ## Atropelar (Troll): não pára no primeiro inimigo — passa por cima de todo
 ## mundo no caminho (cada um sofre o golpe) e só pára de verdade num aliado,
@@ -4352,8 +5494,9 @@ func cast_charge(caster: Dictionary, target: Dictionary, item: Dictionary) -> bo
 ## possível na direção escolhida; se a última casa ficar ocupada, empurra o
 ## Troll pra uma das 4 casas livres ao lado.
 func cast_trample(caster: Dictionary, item: Dictionary, target_tile: Dictionary) -> void:
-	var dx: int = _signi(target_tile["x"] - caster["x"])
-	var dy: int = _signi(target_tile["y"] - caster["y"])
+	var trample_dir := _cardinal_direction(caster, target_tile)
+	var dx: int = trample_dir.x
+	var dy: int = trample_dir.y
 	var final_x: int = caster["x"]
 	var final_y: int = caster["y"]
 	var previous_tile := {"x": caster["x"], "y": caster["y"]}
@@ -4368,6 +5511,10 @@ func cast_trample(caster: Dictionary, item: Dictionary, target_tile: Dictionary)
 			break
 		if dead_unit_at(x, y) != null:
 			break
+		# Corpo de 4 casas: morro/parede/estrutura em QUALQUER casa do corpo
+		# interrompe o atropelo (árvore e outros props não).
+		if is_large_unit(caster) and _large_body_blocked_at(caster, x, y):
+			break
 		# Castelo/Montanha do time adversário: intransponível — o atropelo
 		# pára ANTES desse tile, mas ainda acerta quem estiver nele e a
 		# própria estrutura, como se o Troll tivesse batido de frente nela.
@@ -4378,14 +5525,16 @@ func cast_trample(caster: Dictionary, item: Dictionary, target_tile: Dictionary)
 				hits.append(defender)
 			structure_hits.append(structure)
 			break
-		var occupant = unit_at(x, y)
-		if occupant != null and occupant["team"] == caster["team"]:
+		# Corpo 1x1: só o próprio tile. Corpo grande: as 4 casas que ele cobre.
+		var body_units: Array = units_in_tiles(footprint_tiles(caster, x, y)).filter(func(o): return o["name"] != caster["name"])
+		if body_units.any(func(o): return o["team"] == caster["team"]):
 			break
 		final_x = x
 		final_y = y
 		trample_path.append({"x": x, "y": y})
-		if occupant != null:
-			hits.append(occupant)
+		for occupant in body_units:
+			if not hits.any(func(h): return h["name"] == occupant["name"]):
+				hits.append(occupant)
 
 	var last_occupant = unit_at(final_x, final_y)
 	if last_occupant != null and last_occupant["name"] != caster["name"]:
@@ -4408,6 +5557,15 @@ func cast_trample(caster: Dictionary, item: Dictionary, target_tile: Dictionary)
 			final_y = push_options[0]["y"]
 			trample_path.append({"x": final_x, "y": final_y})
 
+	# Corpo grande nunca termina sobreposto a alguém/algo: recua pelo caminho
+	# até a última casa onde o corpo inteiro cabe (no pior caso, o ponto de partida).
+	if is_large_unit(caster):
+		while (final_x != caster["x"] or final_y != caster["y"]) and not _can_unit_anchor_at(caster, final_x, final_y):
+			trample_path.pop_back()
+			var back: Dictionary = trample_path.back() if not trample_path.is_empty() else {"x": caster["x"], "y": caster["y"]}
+			final_x = back["x"]
+			final_y = back["y"]
+
 	set_facing_towards(caster, {"x": final_x, "y": final_y})
 	caster["x"] = final_x
 	caster["y"] = final_y
@@ -4428,12 +5586,15 @@ func cast_trample(caster: Dictionary, item: Dictionary, target_tile: Dictionary)
 ## Ataque Giratório (Guerreiro) / Crescimento (Troll): mesmo resolvedor —
 ## ataca as 8 casas ao redor (incluindo diagonais) de uma vez, sem mirar.
 func cast_growth_attack(caster: Dictionary, spell: Dictionary) -> void:
+	record_area_action(caster, spell, caster)
 	var dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
 	var tiles: Array = []
-	for d in dirs:
-		var t := {"x": caster["x"] + d[0], "y": caster["y"] + d[1]}
-		if in_bounds(t["x"], t["y"]):
-			tiles.append(t)
+	# Anel ao redor do corpo inteiro (1 casa: as 8 de sempre; 2x2: as 12 vizinhas).
+	for body_tile in footprint_tiles(caster):
+		for d in dirs:
+			var t := {"x": body_tile["x"] + d[0], "y": body_tile["y"] + d[1]}
+			if in_bounds(t["x"], t["y"]) and not unit_contains_tile(caster, t["x"], t["y"]) and not tiles.has(t):
+				tiles.append(t)
 	if spell.get("damageType", "") == "fire":
 		last_action_vfx = {"kind":"fire-area", "caster":caster, "item":spell, "tiles":tiles.duplicate(true)}
 	_log("%s usa %s e ataca tudo ao redor!" % [caster["name"], spell["name"]])
@@ -4454,8 +5615,15 @@ func team_units(team: String) -> Array:
 ## A Maga presa na gaiola nunca conta como oponente (nem pra IA inimiga mirar
 ## nela, nem pra nenhuma outra heurística de alvo) — ver _setup_caged_mage.
 func opposing_team_of(u: Dictionary) -> Array:
-	return team_units("enemy" if u["team"] == "player" else "player").filter(func(o): return not o.get("caged", false))
+	# Morto-vivo do Cemitério ("neutral", um terceiro time): só ataca o time
+	# MAIS PRÓXIMO dele (o de qualquer unidade viva mais perto, jogadores ou
+	# inimigos); os dois times, por sua vez, o tratam como oponente.
+	if u["team"] == "neutral":
+		return _neutral_targets(u)
+	var hostile: Array = team_units("enemy" if u["team"] == "player" else "player") + team_units("neutral")
+	return hostile.filter(func(o): return not o.get("caged", false) and o.get("mountedOn", "") == "")
 
+func _neutral_targets(u: Dictionary) -> Array: return GraveyardRules._neutral_targets(self, u)
 ## Água apaga fogo: atravessar QUALQUER quadrado de água no caminho (não só
 ## terminar nele) já apaga o fogo — voando não conta.
 func extinguish_burn_on_water_crossing(u: Dictionary, path_tiles: Array) -> void:
@@ -4532,13 +5700,56 @@ func apply_opportunity_attacks(u: Dictionary, path_tiles: Array) -> void:
 ## verdade (não só a distância em linha reta) pra cobrar o custo certo de CT
 ## e checar armadilhas/água/almas/ataques de oportunidade no percurso.
 func perform_move(u: Dictionary, dest: Dictionary) -> void:
+	var carrying_mount = mount_of(u)
+	if carrying_mount != null:
+		perform_move(carrying_mount, dest)
+		return
+	# Quem "gasta" o movimento/CT é o dono do turno (o cavaleiro, se montado).
+	var mover_owner := turn_owner(u)
+	if mover_owner.get("cannotMoveThisTurn", false):
+		_log("A unidade não pode se mover depois de Fingir de Morto neste turno.")
+		return
 	var path := reconstruct_path(dest["x"], dest["y"])
-	var cost: int = last_reachable_costs.get(tile_key(dest["x"], dest["y"]), manhattan(u, dest))
+	# A armadilha do Ladino não cobra +1 de deslocamento. Em vez disso, o
+	# primeiro quadrado dela encerra o movimento imediatamente, mesmo quando o
+	# destino original ficava além da armadilha.
+	var stop_index := -1
+	if not u.get("flying", false):
+		for path_index in range(path.size()):
+			var step: Dictionary = path[path_index]
+			for trap in traps:
+				if not trap.get("instant", false):
+					continue
+				if trap.get("ownerName", "") == u.get("name", ""):
+					continue
+				for trap_tile in (trap["tiles"] as Array):
+					if trap_tile["x"] == step["x"] and trap_tile["y"] == step["y"]:
+						stop_index = path_index
+						break
+				if stop_index >= 0:
+					break
+			if stop_index >= 0:
+				break
+	if stop_index >= 0:
+		path = path.slice(0, stop_index + 1)
+		dest = path[path.size() - 1]
+	var cost: int = 0
+	for step in path:
+		cost += step_cost(u, step["x"], step["y"])
+	if path.is_empty():
+		cost = last_reachable_costs.get(tile_key(dest["x"], dest["y"]), manhattan(u, dest))
 	set_facing_towards(u, dest)
 	u["x"] = dest["x"]
 	u["y"] = dest["y"]
-	u["hasMoved"] = true
-	u["ct"] -= move_ct_cost(u, cost)
+	sync_mounts()
+	# Dash (Monge): gasta o movimento extra guardado em vez de encerrar o
+	# movimento do turno — exatamente o que finalize_action faz com o ataque
+	# bônus da Agilidade/Tiro Rápido.
+	if int(mover_owner.get("extraMovesRemaining", 0)) > 0:
+		mover_owner["extraMovesRemaining"] = int(mover_owner["extraMovesRemaining"]) - 1
+	else:
+		mover_owner["hasMoved"] = true
+	mover_owner["ct"] -= move_ct_cost(u, cost)
 	_log("%s se moveu para (%d, %d)." % [u["name"], dest["x"], dest["y"]])
 	apply_trap_crossings(u, path)
 	extinguish_burn_on_water_crossing(u, path)
@@ -4556,13 +5767,100 @@ func _log_slice_has_critical(log_start: int) -> bool:
 		if "CRÍTICO" in String(line): return true
 	return false
 
+const RAIN_BUFF_FIELDS := ["guaranteedNextHit", "critBonusNextAttack", "oneShotDamageBonus", "oneShotDamageBonusSource", "burnNextAttackAlwaysTurns", "slowNextAttackAlwaysTurns", "slowNextAttackAlwaysAmount", "doubleRangeNextAttack", "weakeningStrikeNextAttack", "burnNextAttackTurns"]
+
+func is_arrow_rain_attack(caster: Dictionary, item: Dictionary) -> bool:
+	return caster.get("arrowRainPrepared", false) and (item.get("name", "") == "Arco" or item.get("targetMode", "") == "pierce-line" or item.get("targetMode", "") == "arrow-rain")
+
+func record_area_action(caster: Dictionary, item: Dictionary, target: Dictionary, explicit_tiles: Variant = null) -> void:
+	var tiles = compute_aoe_area_tiles(caster, item, target) if explicit_tiles == null else explicit_tiles
+	if tiles == null: tiles = [target]
+	var impact_target := {"x":target["x"], "y":target["y"]}
+	if item.get("targetMode", "") == "point-aoe" and not item.get("ignoresUnitObstruction", false): impact_target = resolve_obstructed_target(caster, target)
+	last_action_vfx = {"kind":"area-sequence", "caster":caster, "item":item, "target":impact_target, "tiles":tiles.duplicate(true)}
+
+func arrow_rain_item(item: Dictionary) -> Dictionary:
+	var result := item.duplicate(true)
+	result["rainBaseMode"] = item.get("targetMode", "enemy")
+	result["targetMode"] = "arrow-rain"
+	return result
+
+func arrow_rain_tiles(caster: Dictionary, item: Dictionary, target: Dictionary) -> Array:
+	if item.get("rainBaseMode", item.get("targetMode", "")) != "pierce-line":
+		return compute_aoe_area_tiles(caster, {"targetMode":"arrow-rain"}, target)
+	var result: Array = []
+	var seen := {}
+	var rain_dir := _cardinal_direction(caster, target)
+	var line := compute_pierce_line_tiles(caster, rain_dir.x, rain_dir.y, item["maxRange"])
+	for center in line:
+		for tile in compute_aoe_area_tiles(caster, {"targetMode":"arrow-rain"}, center):
+			var key := tile_key(tile["x"], tile["y"])
+			if not seen.has(key):
+				seen[key] = true
+				result.append(tile)
+	return result
+
+func cast_arrow_rain(caster: Dictionary, item: Dictionary, target: Dictionary) -> void:
+	if not is_arrow_rain_attack(caster, item) or caster.get("hasActed", false): return
+	var effective := effective_weapon_item(caster, item)
+	if not is_in_weapon_range(effective, manhattan(caster, target)): return
+	var tiles := arrow_rain_tiles(caster, item, target)
+	var buffs := {}
+	for key in RAIN_BUFF_FIELDS:
+		if caster.has(key): buffs[key] = caster[key]
+	var consumed := {}
+	var piercing: bool = item.get("rainBaseMode", item.get("targetMode", "")) == "pierce-line"
+	# Arco seleciona inimigos e ignora terreno; Perfurante já atinge ambos os times.
+	for victim in units_in_tiles(tiles):
+		if not piercing and (victim["team"] == caster["team"] or victim.get("caged", false)): continue
+		for key in RAIN_BUFF_FIELDS:
+			caster.erase(key)
+			if buffs.has(key): caster[key] = buffs[key]
+		resolve_single_hit(caster, victim, item)
+		for key in RAIN_BUFF_FIELDS:
+			if caster.has(key): consumed[key] = caster[key]
+	for key in RAIN_BUFF_FIELDS:
+		caster.erase(key)
+		if consumed.has(key): caster[key] = consumed[key]
+	if piercing:
+		damage_trees_in_tiles(tiles, item["damageMin"], item["damageMax"])
+		damage_structures_in_tiles(tiles, item["damageMin"], item["damageMax"])
+	caster["arrowRainPrepared"] = caster.get("bonusAttacksRemaining", 0) > 0 and item["name"] == "Arco"
+	last_action_vfx = {"kind":"area-sequence", "caster":caster, "item":arrow_rain_item(item), "target":target.duplicate(), "tiles":tiles, "rainFire":buffs.get("burnNextAttackAlwaysTurns", 0) > 0}
+	set_facing_towards(caster, target)
+	finalize_action(caster, item)
+
 func perform_attack(attacker: Dictionary, defender: Dictionary, item: Dictionary) -> void:
+	if not item_requirements_met(attacker, item):
+		_log("%s não pode usar %s agora." % [attacker["name"], item["name"]])
+		return
+	if is_arrow_rain_attack(attacker, item):
+		cast_arrow_rain(attacker, item, defender)
+		return
 	if is_bard_singing(attacker):
 		_log("%s está cantando e não pode usar a Besta." % attacker["name"])
 		return
 	set_facing_towards(attacker, defender)
 	var log_start := event_log.size()
-	var hit := resolve_single_hit(attacker, defender, item)
+	# Pedido do usuário: Míssil Mágico dispara "hits" projéteis em sequência
+	# (4, cada um 1-2 de dano) em vez de um impacto só — cada míssil rola seu
+	# próprio acerto/dano via resolve_single_hit; pára cedo se o alvo já
+	# morreu pros mísseis restantes não "atirarem" num cadáver.
+	var shots := maxi(1, int(item.get("hits", 1)))
+	var hit := false
+	var missile_damages: Array[int] = []
+	var shot_results: Array = []
+	for i in shots:
+		if defender["hp"] <= 0:
+			break
+		var hp_before_shot := int(defender["hp"])
+		var shot_log_start := event_log.size()
+		var shot_hit := resolve_single_hit(attacker, defender, item)
+		hit = shot_hit or hit
+		var shot_damage := maxi(0, hp_before_shot - int(defender["hp"]))
+		missile_damages.append(shot_damage)
+		# Resultado de CADA golpe (acerto/crítico/dano) para a tela animar um a um.
+		shot_results.append({"hit": shot_hit, "critical": _log_slice_has_critical(shot_log_start), "damage": shot_damage})
 	if item.get("damageType", "") == "fire":
 		last_action_vfx = {"kind":"fire-strike", "caster":attacker, "target":{"x":defender["x"],"y":defender["y"]}}
 	else:
@@ -4572,6 +5870,10 @@ func perform_attack(attacker: Dictionary, defender: Dictionary, item: Dictionary
 		# projétil/golpe pesado de verdade. Mesmo padrão que fire-strike já
 		# usava, só que cobrindo o caso comum (sem elemento).
 		last_action_vfx = {"kind":"weapon-attack", "caster":attacker, "target":{"x":defender["x"],"y":defender["y"]}, "item":item, "hit":hit, "critical":_log_slice_has_critical(log_start)}
+		if item.get("name", "") == "Míssil Mágico":
+			last_action_vfx["missileDamages"] = missile_damages
+		if shots > 1:
+			last_action_vfx["shotResults"] = shot_results
 	finalize_action(attacker, item)
 
 func perform_ranged_attack_with_obstruction(caster: Dictionary, target: Dictionary, weapon: Dictionary) -> void:
@@ -4597,220 +5899,15 @@ func perform_ranged_attack_with_obstruction(caster: Dictionary, target: Dictiona
 
 # --- Fase 4: heurísticas de IA (game.js:9783-10030) -------------------------
 
-func _find_spell(u: Dictionary, predicate: Callable) -> Variant:
-	for s in u.get("spells", []):
-		if predicate.call(s):
-			return s
-	return null
-
-## BFS (4 direções, sem custo/alcance) a partir de (target_x, target_y) sobre
-## todo o tabuleiro, respeitando só bloqueio de verdade (BoardLayout.
-## BLOCKING_TERRAIN_TYPES) — água NÃO bloqueia aqui (só custa mais caro pra
-## andar, ver water_step_cost), só decide se dá pra CHEGAR. Usado como
-## critério de progresso pro fallback de movimento da IA em vez de distância
-## Manhattan em linha reta, que não enxerga paredes: um monstro só com saída
-## por um corredor/escada específico pode ter Manhattan MENOR ficando parado
-## contra a parede errada do que desviando até o corredor certo.
-func _walkable_path_distance_map(target_x: int, target_y: int) -> Dictionary:
-	var dist := {}
-	var start_key := tile_key(target_x, target_y)
-	dist[start_key] = 0
-	var queue: Array = [{"x": target_x, "y": target_y}]
-	var head := 0
-	while head < queue.size():
-		var cur: Dictionary = queue[head]
-		head += 1
-		var cur_dist: int = dist[tile_key(cur["x"], cur["y"])]
-		for d in [[1, 0], [-1, 0], [0, 1], [0, -1]]:
-			var nx: int = cur["x"] + d[0]
-			var ny: int = cur["y"] + d[1]
-			if not in_bounds(nx, ny):
-				continue
-			var nk := tile_key(nx, ny)
-			if dist.has(nk):
-				continue
-			var terrain = terrain_at(nx, ny)
-			if terrain != null and BoardLayout.BLOCKING_TERRAIN_TYPES.has(terrain.get("type", "")):
-				continue
-			dist[nk] = cur_dist + 1
-			queue.append({"x": nx, "y": ny})
-	return dist
-
-## Alvo mais próximo do time adversário — nunca mira em quem está invisível
-## (o golpe sempre erraria), mesmo que seja o único adversário restante.
-func pick_nearest_target(u: Dictionary) -> Variant:
-	# "caged" (ver resolve_single_hit) é imune a qualquer dano — sem esse
-	# filtro a IA mirava na Maga presa sempre que ela fosse o oponente mais
-	# próximo, gastando o turno inteiro atacando alguém que nunca pode ser
-	# ferido em vez de um alvo de verdade.
-	var opponents: Array = opposing_team_of(u).filter(func(o): return o["hp"] > 0 and not o.get("caged", false))
-	if opponents.is_empty():
-		return null
-	var visible: Array = opponents.filter(func(o): return not is_invisible(o))
-	if visible.is_empty():
-		return null
-	visible.sort_custom(func(a, b): return manhattan(u, a) < manhattan(u, b))
-	return visible[0]
-
-## Entre as armas em alcance pra `distance`, escolhe a de maior chance de
-## acerto. Se `target` voa, descarta de cara qualquer arma corpo a corpo
-## comum (sempre erra contra voadores).
-func pick_weapon_for_distance(weapons: Array, distance: int, target) -> Variant:
-	var candidates: Array = weapons.filter(func(w): return is_in_weapon_range(w, distance))
-	if target != null and target.get("flying", false):
-		candidates = candidates.filter(func(w): return not (not w.has("mpCost") and w["maxRange"] == 1 and not w.get("aerial", false)))
-	if candidates.is_empty():
-		return null
-	candidates.sort_custom(func(a, b): return float(get_hit_chance(a, distance)) > float(get_hit_chance(b, distance)))
-	return candidates[0]
-
-## Cura em Área (Xamã/Fada): escolhe como centro um aliado ferido dentro do
-## alcance, preferindo o spot que cura mais gente ferida sem pegar inimigo.
-func pick_best_heal_aoe_spot(caster: Dictionary, spell: Dictionary) -> Variant:
-	var allies: Array = team_units(caster["team"]).filter(func(u): return u["hp"] > 0)
-	var enemies: Array = opposing_team_of(caster).filter(func(u): return u["hp"] > 0)
-	var candidates: Array = allies.filter(func(u): return u["hp"] < u["maxHp"] * 0.5 and manhattan(caster, u) <= spell["maxRange"] and manhattan(caster, u) >= spell["minRange"])
-	if candidates.is_empty():
-		return null
-	var spots: Array = []
-	for c in candidates:
-		spots.append({"x": c["x"], "y": c["y"]})
-		for d in [[1, 0], [-1, 0], [0, 1], [0, -1]]:
-			var spot := {"x": c["x"] + d[0], "y": c["y"] + d[1]}
-			if in_bounds(spot["x"], spot["y"]) and manhattan(caster, spot) <= spell["maxRange"] and manhattan(caster, spot) >= spell["minRange"]:
-				spots.append(spot)
-	var best = null
-	var best_score: float = -INF
-	for spot in spots:
-		var wounded_nearby := 0
-		for u in allies:
-			if u["hp"] < u["maxHp"] and manhattan(u, spot) <= spell["areaRadius"]:
-				wounded_nearby += 1
-		var enemies_caught := 0
-		for u in enemies:
-			if manhattan(u, spot) <= spell["areaRadius"]:
-				enemies_caught += 1
-		var score: float = wounded_nearby - enemies_caught * 10
-		if score > best_score:
-			best_score = score
-			best = spot
-	return best
-
-## Melhor alvo pra Ressurreição: cadáver aliado no alcance com MENOS turnos
-## restantes (mais perto de virar alma).
-## `require_undead` (Reanimação do Lich): mesmo critério de sempre, só
-## acrescentando o filtro `undead` — reutilizado em vez de duplicado, já
-## que Ressurreição/Reanimação só diferem nisso (a diferença de COMO
-## reviver, cast_resurrect vs cast_reanimate, já está isolada à parte).
-func pick_resurrect_target(caster: Dictionary, spell: Dictionary, require_undead: bool = false) -> Variant:
-	var dead_allies: Array = []
-	for u in units:
-		if u["team"] != caster["team"] or u["hp"] > 0 or not u.has("turnsSinceDeath"):
-			continue
-		if require_undead and not u.get("undead", false):
-			continue
-		if manhattan(caster, u) > spell["maxRange"] or manhattan(caster, u) < spell["minRange"]:
-			continue
-		dead_allies.append(u)
-	if dead_allies.is_empty():
-		return null
-	dead_allies.sort_custom(func(a, b): return a["turnsSinceDeath"] > b["turnsSinceDeath"])
-	return dead_allies[0]
-
-## Direção que acerta MAIS inimigos SEM acertar NENHUM aliado — "0 aliados
-## atingidos" é obrigatório, mesmo abrindo mão de acertar mais inimigos numa
-## direção que pegasse 1 aliado. `compute_tiles_for_dir` recebe (dx,dy) e
-## devolve os tiles daquela direção (cone ou faixa, conforme a habilidade).
-func pick_best_safe_aoe_direction(caster: Dictionary, compute_tiles_for_dir: Callable) -> Variant:
-	var dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]]
-	var best = null
-	for d in dirs:
-		var tiles = compute_tiles_for_dir.call(d[0], d[1])
-		if tiles == null or (tiles as Array).is_empty():
-			continue
-		var enemy_count := 0
-		var ally_hit := false
-		for t in tiles:
-			var u = unit_at(t["x"], t["y"])
-			if u == null:
-				continue
-			if u["team"] == caster["team"]:
-				ally_hit = true
-				break
-			enemy_count += 1
-		if ally_hit or enemy_count == 0:
-			continue
-		if best == null or enemy_count > best["enemyCount"]:
-			best = {"dx": d[0], "dy": d[1], "tiles": tiles, "enemyCount": enemy_count}
-	return best
-
-func pick_best_cone_direction(caster: Dictionary, spell: Dictionary) -> Variant:
-	var dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]]
-	var best = null
-	var best_count := 0
-	for d in dirs:
-		var tiles := compute_cone_tiles_for_dir(caster, d[0], d[1], spell["maxRange"])
-		var count := 0
-		for t in tiles:
-			var u = unit_at(t["x"], t["y"])
-			if u != null and u["team"] != caster["team"]:
-				count += 1
-		if count > best_count:
-			best_count = count
-			best = tiles
-	return best
-
-## Congelamento (Fada): mira o inimigo cujo losango ao redor pega mais
-## gente; ignora quem já está paralisado.
-func pick_best_freeze_target(caster: Dictionary, spell: Dictionary) -> Variant:
-	var candidates: Array = []
-	for u in opposing_team_of(caster):
-		if u["hp"] > 0 and manhattan(caster, u) <= spell["maxRange"] and not is_paralyzed(u):
-			candidates.append(u)
-	if candidates.is_empty():
-		return null
-	var best = candidates[0]
-	var best_count := -1
-	for c in candidates:
-		var count := 0
-		for u in alive_units():
-			if u["team"] != caster["team"] and manhattan(u, c) <= spell["areaRadius"]:
-				count += 1
-		if count > best_count:
-			best_count = count
-			best = c
-	return {"x": best["x"], "y": best["y"]}
-
-## Melhor ponto de impacto pra explosão em área ofensiva: maximiza quantos
-## inimigos a área pega, mas NUNCA escolhe um ponto que também pegue um
-## aliado (a mira da IA é seletiva; o efeito em si continua acertando todo
-## mundo dentro se de fato lançado ali).
-func pick_best_blast_spot(caster: Dictionary, spell: Dictionary) -> Variant:
-	var enemies: Array = opposing_team_of(caster).filter(func(u): return u["hp"] > 0)
-	var allies: Array = team_units(caster["team"]).filter(func(u): return u["hp"] > 0)
-	var candidates: Array = enemies.filter(func(u): return manhattan(caster, u) <= spell["maxRange"] and manhattan(caster, u) >= spell["minRange"])
-	if candidates.is_empty():
-		return null
-	var best = null
-	var best_count := 0
-	for c in candidates:
-		var spot := {"x": c["x"], "y": c["y"]}
-		var friendly_caught := false
-		for u in allies:
-			if manhattan(u, spot) <= spell["areaRadius"]:
-				friendly_caught = true
-				break
-		if friendly_caught:
-			continue
-		var enemies_caught := 0
-		for u in enemies:
-			if manhattan(u, spot) <= spell["areaRadius"]:
-				enemies_caught += 1
-		if enemies_caught > best_count:
-			best_count = enemies_caught
-			best = spot
-	return best
-
+# --- IA dos inimigos e de herois controlados pela IA (heuristicas de alvo/magia e o turno da IA). (ver autoload/ai/enemy_ai.gd) ---
+func _walkable_path_distance_map(target_x: int, target_y: int) -> Dictionary: return EnemyAI._walkable_path_distance_map(self, target_x, target_y)
+func pick_nearest_target(u: Dictionary) -> Variant: return EnemyAI.pick_nearest_target(self, u)
+func pick_weapon_for_distance(weapons: Array, distance: int, target) -> Variant: return EnemyAI.pick_weapon_for_distance(self, weapons, distance, target)
+func pick_best_heal_aoe_spot(caster: Dictionary, spell: Dictionary) -> Variant: return EnemyAI.pick_best_heal_aoe_spot(self, caster, spell)
+func pick_resurrect_target(caster: Dictionary, spell: Dictionary, require_undead: bool = false) -> Variant: return EnemyAI.pick_resurrect_target(self, caster, spell, require_undead)
+func pick_best_safe_aoe_direction(caster: Dictionary, compute_tiles_for_dir: Callable) -> Variant: return EnemyAI.pick_best_safe_aoe_direction(self, caster, compute_tiles_for_dir)
+func pick_best_cone_direction(caster: Dictionary, spell: Dictionary) -> Variant: return EnemyAI.pick_best_cone_direction(self, caster, spell)
+func pick_best_blast_spot(caster: Dictionary, spell: Dictionary) -> Variant: return EnemyAI.pick_best_blast_spot(self, caster, spell)
 func weapon_aim_tiles(u: Dictionary, target: Dictionary, weapon: Dictionary) -> Array:
 	if weapon.get("requiresClearPath", false):
 		var line: Array = bresenham_line(u["x"], u["y"], target["x"], target["y"])
@@ -4822,9 +5919,9 @@ func weapon_aim_tiles(u: Dictionary, target: Dictionary, weapon: Dictionary) -> 
 ## igual, pela distância.
 func get_attack_options(u: Dictionary) -> Array:
 	if is_bard_singing(u): return []
-	var result: Array = (u.get("weapons", []) as Array).filter(func(item): return not item.has("mpCost") or int(u.get("mp", 0)) >= int(item["mpCost"]))
+	var result: Array = (u.get("weapons", []) as Array).filter(func(item): return not item.has("mpCost") or int(item.get("mpCost", 0)) == 0 or int(u.get("mp", 0)) >= int(item["mpCost"]))
 	for s in u.get("spells", []):
-		if s.get("targetMode") == "enemy" and u["mp"] >= s["mpCost"]:
+		if s.get("targetMode") == "enemy" and u["mp"] >= s["mpCost"] and not s.get("manualOnly", false):
 			result.append(s)
 	return result
 
@@ -4839,21 +5936,7 @@ func get_attack_options_against(u: Dictionary, target: Dictionary) -> Array:
 		result = result.filter(func(item): return not item.get("cardinalOnly", false))
 	return result
 
-## Executa um ataque e, se sobrar ataque bônus (Agilidade — hasActed
-## continua false depois do golpe), tenta atacar de novo antes de passar o
-## turno.
-func enemy_attack_then_advance(u: Dictionary, target: Dictionary, weapon_item: Dictionary) -> void:
-	if weapon_item.get("requiresClearPath", false):
-		perform_ranged_attack_with_obstruction(u, target, weapon_item)
-	else:
-		perform_attack(u, target, weapon_item)
-	if not u.get("hasActed", false) and u["hp"] > 0 and target["hp"] > 0:
-		var next_weapon = pick_weapon_for_distance(get_attack_options_against(u, target), manhattan(u, target), target)
-		if next_weapon != null:
-			enemy_attack_then_advance(u, target, next_weapon)
-			return
-	advance_to_next_turn()
-
+func enemy_attack_then_advance(u: Dictionary, target: Dictionary, weapon_item: Dictionary) -> void: EnemyAI.enemy_attack_then_advance(self, u, target, weapon_item)
 func special_fire_area_tiles(caster: Dictionary) -> Array:
 	var result: Array = []
 	for dy in range(-1, 2):
@@ -4878,12 +5961,18 @@ func _count_enemies_in_special_area(caster: Dictionary) -> int:
 		if victim != null and victim["team"] != caster["team"]: count += 1
 	return count
 
+## Pedido do usuário: habilidade de fogo acerta QUALQUER UM na área (aliado
+## ou inimigo, mesmo padrão já usado por Bola de Fogo/Cura) — um aliado de
+## afinidade "fire:heal" (Fogo Vivo/Lava Humana/Salamandra/Demônio das
+## Chamas) recupera HP em vez de sofrer dano, e o Dragão (fire:immune) só
+## ignora o golpe; os dois casos retornam antes de chegar em `appliesBurn`
+## dentro de resolve_single_hit, então nenhum dos dois pega fogo.
 func cast_fire_self_area(caster: Dictionary, item: Dictionary) -> void:
 	var tiles := special_fire_area_tiles(caster)
 	last_action_vfx = {"kind":"fire-area", "caster":caster, "item":item, "tiles":tiles.duplicate(true)}
 	for tile in tiles:
 		var victim = unit_at(tile["x"], tile["y"])
-		if victim != null and victim["team"] != caster["team"]:
+		if victim != null:
 			resolve_single_hit(caster, victim, item)
 	finalize_action(caster, item)
 
@@ -4893,668 +5982,15 @@ func cast_living_fire_self_destruct(caster: Dictionary, item: Dictionary) -> voi
 	_log("%s se autodestrói numa explosão de fogo!" % caster["name"])
 	finalize_death_if_needed(caster)
 
+## Pedido do usuário: mesma regra de cast_fire_self_area — acerta qualquer
+## um na área, cura em vez de ferir quem tiver afinidade fire:heal.
 func cast_fire_cone(caster: Dictionary, item: Dictionary, tiles: Array) -> void:
 	last_action_vfx = {"kind":"fire-cone", "caster":caster, "item":item, "tiles":tiles.duplicate(true)}
 	for tile in tiles:
 		var victim = unit_at(tile["x"], tile["y"])
-		if victim != null and victim["team"] != caster["team"]:
+		if victim != null:
 			resolve_single_hit(caster, victim, item)
 	finalize_action(caster, item)
 
-## Prioridade absoluta da IA na Horda: monstros que estão no platô superior
-## (y < 3) ou já entraram na escada não param para atacar/conjurar. Eles
-## avançam pelo caminho real até o primeiro tile do piso inferior (11,7),
-## garantindo que saiam do morro para participar da luta.
-func _try_prioritize_lua_valley_ladder_descent(u: Dictionary) -> bool:
-	if scenario_id != ScenarioManager.LUA_VALLEY or u.get("team", "") != "enemy":
-		return false
-	var terrain = terrain_at(int(u["x"]), int(u["y"]))
-	var on_ladder: bool = terrain != null and terrain.get("type", "") == "lua-ladder"
-	if int(u["y"]) >= 3 and not on_ladder:
-		return false
-	if is_rooted(u):
-		return false
-	var lower_floor := {"x": 11, "y": 7}
-	var path_dist := _walkable_path_distance_map(lower_floor["x"], lower_floor["y"])
-	var start_dist: int = int(path_dist.get(tile_key(u["x"], u["y"]), 1_000_000))
-	var best = null
-	var best_dist := start_dist
-	for tile in compute_reachable(u):
-		var distance: int = int(path_dist.get(tile_key(tile["x"], tile["y"]), 1_000_000))
-		if distance < best_dist:
-			best_dist = distance
-			best = tile
-	if best == null:
-		return false
-	perform_move(u, best)
-	_log("%s prioriza descer a escada para entrar na luta!" % u["name"])
-	advance_to_next_turn()
-	return true
-
-## Compartilhado por toda IA de invocação (Fogo Vivo do Demônio das Chamas,
-## Morcegos do Vampiro, Esqueleto/Zumbi do Lich): só considera invocar
-## quando há utilidade tática real — não gasta MP automaticamente. Evita
-## invocar com um inimigo já adjacente (prioriza lutar) e só invoca quando o
-## próprio time está em desvantagem numérica (menos aliados vivos que
-## inimigos vivos).
-func _wants_to_summon_reinforcement(u: Dictionary) -> bool:
-	var nearest = pick_nearest_target(u)
-	if nearest != null and manhattan(u, nearest) <= 1:
-		return false
-	var allies_alive: int = team_units(u["team"]).filter(func(o): return o["hp"] > 0).size()
-	var enemies_alive: int = opposing_team_of(u).filter(func(o): return o["hp"] > 0).size()
-	return allies_alive < enemies_alive
-
-## Tile válido pra qualquer invocação de alcance N: mesma checagem de
-## terreno/ocupação de _cast_summon_unit, varrendo todo o losango de alcance
-## em vez de expandir a partir de uma origem fixa (a unidade pode preferir
-## qualquer tile dentro do alcance, não só o mais próximo — ver
-## _first_free_tile_near pro caso "mais próximo de um ponto").
-func _summon_spot_in_range(u: Dictionary, spell: Dictionary) -> Variant:
-	var max_range: int = int(spell["maxRange"])
-	var candidates: Array = []
-	for dx in range(-max_range, max_range + 1):
-		for dy in range(-max_range, max_range + 1):
-			if absi(dx) + absi(dy) > max_range or (dx == 0 and dy == 0):
-				continue
-			var x: int = int(u["x"]) + dx
-			var y: int = int(u["y"]) + dy
-			if not in_bounds(x, y):
-				continue
-			var terrain = terrain_at(x, y)
-			var open_ground: bool = terrain == null or terrain.get("walkable", false)
-			if open_ground and occupant_at(x, y) == null and structure_at(x, y) == null:
-				candidates.append({"x": x, "y": y})
-	if candidates.is_empty():
-		return null
-	return candidates[rng.randi_range(0, candidates.size() - 1)]
-
-## Vampiro: Virar Morcego é uma PREPARAÇÃO (não a jogada principal do
-## turno) — só vale quando traz vantagem real, nunca automática só por ter
-## MP sobrando (pedido do usuário). Já transformado, nunca reconsidera (a
-## renovação de duração já é responsabilidade de quem usar a habilidade de
-## novo, não desta checagem). Dois motivos táticos: (1) alcançar um alvo que
-## só o MOV dobrado (ou o Voo, atravessando terreno) resolve, (2) HP abaixo
-## de 50% aproveitando o lifesteal de 100% da forma de morcego.
-func _vampire_wants_bat_form(u: Dictionary, target) -> bool:
-	if _has_status(u, "batForm"):
-		return false
-	if target == null:
-		return false
-	var distance: int = manhattan(u, target)
-	var reachable_now: bool = compute_reachable(u).any(func(t): return manhattan(t, target) <= 1)
-	var needs_reach: bool = not reachable_now and distance <= u["moveRange"] * 2
-	var wants_lifesteal_boost: bool = u["hp"] < u["maxHp"] * 0.5 and distance <= u["moveRange"] * 2 + 1
-	return needs_reach or wants_lifesteal_boost
-
-## Lich, Infligir Ferimentos usada como cura: mesmo critério de
-## pick_best_heal_aoe_spot (prioriza quem está mais ferido, em fração de
-## HP), só filtrando por `undead` — Infligir Ferimentos SÓ cura morto-vivo
-## (ver resolve_harm).
-func _pick_inflict_wounds_heal_target(caster: Dictionary, spell: Dictionary) -> Variant:
-	var candidates: Array = team_units(caster["team"]).filter(func(u):
-		var in_range: bool = manhattan(caster, u) <= spell["maxRange"] and manhattan(caster, u) >= spell["minRange"]
-		return u["hp"] > 0 and u.get("undead", false) and u["hp"] < u["maxHp"] * 0.5 and in_range
-	)
-	if candidates.is_empty():
-		return null
-	candidates.sort_custom(func(a, b): return float(a["hp"]) / float(a["maxHp"]) < float(b["hp"]) / float(b["maxHp"]))
-	return candidates[0]
-
-## Lich, Decaimento: quantos alvos de VALOR real a área centrada na posição
-## ATUAL do Lich pegaria agora — inimigo vivo (sempre vale, sofre dano) ou
-## aliado morto-vivo abaixo do HP máximo (só vale se há o que curar). Usado
-## pra só priorizar a magia quando há 2+ alvos, mesmo limiar já usado por
-## outras habilidades de área desta IA (ex: Crescimento do Troll).
-func _decay_pulse_value(u: Dictionary, spell: Dictionary) -> int:
-	var value := 0
-	for target in alive_units():
-		if manhattan(u, target) > spell["areaRadius"]:
-			continue
-		if target.get("undead", false):
-			if target["hp"] < target["maxHp"]:
-				value += 1
-		else:
-			value += 1
-	return value
-
-## Decide e executa o turno inteiro de uma unidade controlada por IA
-## (game.js:10032-10476). Ordem de prioridade: habilidades livres (Fúria,
-## Pés Ágeis, Agilidade, Evasiva, Regeneração) primeiro; depois Ressurreição
-## > Cura em Área > Regeneração em Área; depois a prioridade especial de
-## Ventania/Destruição Rastejante quando pegam 2+ inimigos sem nenhum
-## aliado; depois (com um alvo escolhido) Prisão de Vinhas > explosão em
-## área segura > Congelamento > Ventania > Crescimento (2+ adjacentes) >
-## Envenenamento > Investida > Atropelar; por fim ataque normal ou
-## aproximação (com desvio por alma/sobrevivência/Montanha). Termina
-## chamando advance_to_next_turn() (ou, em cadeia, enemy_attack_then_advance)
-## — não dispara a IA da próxima unidade sozinho.
-func enemy_act(u: Dictionary) -> void:
-	if _try_prioritize_lua_valley_ladder_descent(u):
-		return
-	if u.get("spriteKey", "") == "bardo" and u.get("mp", 0) >= 10:
-		var allies := _eligible_song_targets(u, true)
-		var enemies := _eligible_song_targets(u, false)
-		var critical_allies := allies.filter(func(a): return int(a["hp"]) * 100 <= int(a["maxHp"]) * 40)
-		var chosen_song = null
-		# Mantém a música atual; só troca por Cura diante de emergência real.
-		if not is_bard_singing(u) or not critical_allies.is_empty():
-			if not critical_allies.is_empty():
-				chosen_song = _find_spell(u, func(s): return s.get("songKind", "") == "heal")
-			elif allies.size() >= 2:
-				chosen_song = _find_spell(u, func(s): return s.get("songKind", "") == "inspiration")
-			elif enemies.any(func(e): return int(e.get("ct", 0)) >= 30):
-				chosen_song = _find_spell(u, func(s): return s.get("songKind", "") == "distraction")
-			else:
-				chosen_song = _find_spell(u, func(s): return s.get("songKind", "") == "pain")
-		if chosen_song != null and (not is_bard_singing(u) or chosen_song.get("songKind", "") != (u["activeBardSong"]["item"] as Dictionary).get("songKind", "")):
-			cast_bard_song(u, chosen_song)
-			advance_to_next_turn()
-			return
-	if u.get("spriteKey", "") == "spd_goo" and u.get("mp", 0) >= 5:
-		for hero in opposing_team_of(u):
-			if manhattan(u, hero) <= 2:
-				cast_black_slime_poison(u)
-				advance_to_next_turn()
-				return
-	if u.has("spells"):
-		var fury_spell = _find_spell(u, func(s): return s.get("kind") == "fury")
-		if fury_spell != null and u["mp"] >= fury_spell["mpCost"] and not _has_status(u, "fury"):
-			cast_fury(u, fury_spell)
-		var swift_spell = _find_spell(u, func(s): return s.get("kind") == "swift-feet")
-		var used_swift_feet := false
-		if swift_spell != null and u["mp"] >= swift_spell["mpCost"] and not _has_status(u, "swiftFeet"):
-			var nearest_for_swift = pick_nearest_target(u)
-			if nearest_for_swift != null and manhattan(u, nearest_for_swift) > u["moveRange"]:
-				cast_swift_feet(u, swift_spell)
-				used_swift_feet = true
-		var agility_spell = _find_spell(u, func(s): return s.get("kind") == "haste-attack")
-		if agility_spell != null and not used_swift_feet and u["mp"] >= agility_spell["mpCost"] and u.get("bonusAttacksRemaining", 0) == 0:
-			cast_agility(u, agility_spell)
-		var evasive_spell = _find_spell(u, func(s): return s.get("kind") == "evasive")
-		if evasive_spell != null and u["mp"] >= evasive_spell["mpCost"] and not _has_status(u, "evasive"):
-			cast_evasive_maneuver(u, evasive_spell)
-		var regen_spell = _find_spell(u, func(s): return s.get("kind") == "regen-boost")
-		if regen_spell != null and u["mp"] >= regen_spell["mpCost"] and u["hp"] < u["maxHp"] * 0.5 and not _has_status(u, "regenBoost"):
-			cast_regen_boost(u, regen_spell)
-
-	if u.has("spells"):
-		var resurrect_spell = _find_spell(u, func(s): return s.get("kind") == "resurrect")
-		if resurrect_spell != null and u["mp"] >= resurrect_spell["mpCost"]:
-			var target = pick_resurrect_target(u, resurrect_spell)
-			if target != null:
-				cast_resurrect(u, target, resurrect_spell)
-				advance_to_next_turn()
-				return
-		var heal_spell = _find_spell(u, func(s): return s.get("kind") == "heal-aoe")
-		if heal_spell != null and u["mp"] >= heal_spell["mpCost"]:
-			var spot = pick_best_heal_aoe_spot(u, heal_spell)
-			if spot != null:
-				cast_heal_aoe(u, heal_spell, spot)
-				advance_to_next_turn()
-				return
-		var regen_aoe_spell = _find_spell(u, func(s): return s.get("kind") == "regen-aoe")
-		if regen_aoe_spell != null and u["mp"] >= regen_aoe_spell["mpCost"]:
-			var spot = pick_best_heal_aoe_spot(u, regen_aoe_spell)
-			if spot != null:
-				cast_regen_aoe(u, regen_aoe_spell, spot)
-				advance_to_next_turn()
-				return
-
-	if u.has("spells"):
-		if u.get("spriteKey") == "fada":
-			var windstorm_spell = _find_spell(u, func(s): return s.get("kind") == "windstorm")
-			if windstorm_spell != null and u["mp"] >= windstorm_spell["mpCost"]:
-				var best = pick_best_safe_aoe_direction(u, func(dx, dy): return compute_cone_tiles_for_dir(u, dx, dy, windstorm_spell["maxRange"]))
-				if best != null and best["enemyCount"] >= 2:
-					cast_windstorm(u, windstorm_spell, best["tiles"])
-					advance_to_next_turn()
-					return
-		if u.get("spriteKey") == "xama":
-			var creep_spell = _find_spell(u, func(s): return s.get("kind") == "creeping-line")
-			if creep_spell != null and u["mp"] >= creep_spell["mpCost"]:
-				var best = pick_best_safe_aoe_direction(u, func(dx, dy):
-					var probe := {"x": u["x"] + dx, "y": u["y"] + dy}
-					if not in_bounds(probe["x"], probe["y"]):
-						return []
-					return compute_cardinal_rect_tiles(u, probe, creep_spell["bandLength"], creep_spell["bandWidth"])
-				)
-				if best != null and best["enemyCount"] >= 2:
-					var target_tile := {"x": u["x"] + best["dx"], "y": u["y"] + best["dy"]}
-					cast_creeping_destruction(u, creep_spell, target_tile)
-					advance_to_next_turn()
-					return
-
-	var target = pick_nearest_target(u)
-	if target == null:
-		advance_to_next_turn()
-		return
-
-	# Habilidades próprias dos habitantes dos novos andares.
-	if u.get("spriteKey", "") == "tower_living_fire":
-		var self_destruct = _find_spell(u, func(s): return s.get("kind", "") == "living-fire-self-destruct")
-		var chance := living_fire_self_destruct_chance(int(u["hp"]))
-		if self_destruct != null and _count_enemies_in_special_area(u) > 0 and rng.randf() < chance:
-			cast_living_fire_self_destruct(u, self_destruct)
-			advance_to_next_turn()
-			return
-	if u.get("spriteKey", "") == "tower_salamander":
-		var explosion = _find_spell(u, func(s): return s.get("kind", "") == "growth-attack")
-		var flame_wave = _find_spell(u, func(s): return s.get("kind", "") == "salamander-flame-wave")
-		var adjacent_count := 0
-		for d in [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]:
-			var adjacent = unit_at(int(u["x"]) + d[0], int(u["y"]) + d[1])
-			if adjacent != null and adjacent["team"] != u["team"]: adjacent_count += 1
-		var best_wave = null
-		if flame_wave != null and u["mp"] >= flame_wave["mpCost"]:
-			best_wave = pick_best_safe_aoe_direction(u, func(dx, dy):
-				var probe := {"x": u["x"] + dx, "y": u["y"] + dy}
-				if not in_bounds(probe["x"], probe["y"]): return []
-				return compute_cardinal_rect_tiles(u, probe, flame_wave["bandLength"], flame_wave["bandWidth"])
-			)
-		# A faixa vale 3 pontos por alvo; a explosão local, 2. Empates
-		# favorecem a opção barata, conservando MP de forma intencional.
-		var wave_count: int = int(best_wave.get("enemyCount", 0)) if best_wave != null else 0
-		if wave_count > 0 and wave_count * 3 > adjacent_count * 2:
-			var wave_target := {"x": u["x"] + best_wave["dx"], "y": u["y"] + best_wave["dy"]}
-			cast_salamander_flame_wave(u, flame_wave, wave_target)
-			advance_to_next_turn()
-			return
-		if explosion != null and u["mp"] >= explosion["mpCost"] and adjacent_count > 0:
-			cast_growth_attack(u, explosion)
-			advance_to_next_turn()
-			return
-	if u.get("spriteKey", "") == "tower_lava_human":
-		var fire_area = _find_spell(u, func(s): return s.get("kind", "") == "fire-self-area")
-		if fire_area != null and _count_enemies_in_special_area(u) > 0:
-			cast_fire_self_area(u, fire_area)
-			advance_to_next_turn()
-			return
-		var fire_cone = _find_spell(u, func(s): return s.get("kind", "") == "cone-fire")
-		if fire_cone != null and u["mp"] >= fire_cone["mpCost"]:
-			var best_fire_cone = pick_best_cone_direction(u, fire_cone)
-			if best_fire_cone != null:
-				cast_fire_cone(u, fire_cone, best_fire_cone)
-				advance_to_next_turn()
-				return
-	if u.get("spriteKey", "") == "flame_demon":
-		# Flecha de Fogo Penetrante: só prioriza quando pega 2+ inimigos
-		# alinhados numa das 4 direções cardeais (pedido do usuário) — senão
-		# cai pro fluxo genérico abaixo (Bola de Fogo em área/Garra/Raio de
-		# Fogo via pick_weapon_for_distance).
-		var pierce_spell = _find_spell(u, func(s): return s.get("kind", "") == "fire-arrow-pierce")
-		if pierce_spell != null and u["mp"] >= pierce_spell["mpCost"]:
-			var best_pierce = pick_best_safe_aoe_direction(u, func(dx, dy): return compute_pierce_line_tiles(u, dx, dy, pierce_spell["maxRange"]))
-			if best_pierce != null and best_pierce["enemyCount"] >= 2:
-				var pierce_tile := {"x": u["x"] + best_pierce["dx"], "y": u["y"] + best_pierce["dy"]}
-				cast_pierce_shot(u, pierce_spell, pierce_tile)
-				advance_to_next_turn()
-				return
-		var summon_spell = _find_spell(u, func(s): return s.get("kind", "") == "summon-living-fire")
-		if summon_spell != null and u["mp"] >= summon_spell["mpCost"] and _wants_to_summon_reinforcement(u):
-			var summon_spot = _summon_spot_in_range(u, summon_spell)
-			if summon_spot != null:
-				cast_summon_living_fire(u, summon_spell, summon_spot)
-				advance_to_next_turn()
-				return
-	# Vampiro: Virar Morcego é ação livre (não consome CT/turno, ver
-	# cast_vampire_bat_form) — considerada uma PREPARAÇÃO antes da
-	# ação/movimento normal, nunca a jogada principal do turno sozinha.
-	# Rodar isso ANTES da checagem de Invocar Morcegos (abaixo) já implementa
-	# "reservar MP pra transformação" de graça: o MP gasto aqui reduz o que
-	# sobra pro summon_spell.get("mpCost") do bloco seguinte, sem precisar de
-	# nenhuma lógica extra de orçamento. Mordida/Toque Vampírico não
-	# precisam de bloco especial — são armas comuns, escolhidas por
-	# pick_weapon_for_distance mais abaixo, igual qualquer outra unidade.
-	if u.get("spriteKey", "") == "vampire":
-		if _vampire_wants_bat_form(u, target):
-			var bat_spell = _find_spell(u, func(s): return s.get("kind", "") == "vampire-bat-form")
-			if bat_spell != null and u["mp"] >= bat_spell["mpCost"]:
-				cast_vampire_bat_form(u, bat_spell)
-		var bat_summon_spell = _find_spell(u, func(s): return s.get("kind", "") == "summon-vampire-bat")
-		if bat_summon_spell != null and u["mp"] >= bat_summon_spell["mpCost"] and _wants_to_summon_reinforcement(u):
-			var bat_summon_spot = _summon_spot_in_range(u, bat_summon_spell)
-			if bat_summon_spot != null:
-				cast_summon_vampire_bat(u, bat_summon_spell, bat_summon_spot)
-				advance_to_next_turn()
-				return
-
-	# Lich: suporte/controle. Ordem de prioridade (pedido do usuário):
-	# Reanimação (trazer de volta um aliado morto-vivo) > Infligir
-	# Ferimentos como cura de emergência > Decaimento (quando pega 2+
-	# alvos de valor) > Infligir Ferimentos como ataque > Invocar
-	# Esqueleto/Zumbi (só se sobrar utilidade tática e MP) — Raio de
-	# Decaimento nem precisa de bloco próprio, é só mais uma arma pra
-	# pick_weapon_for_distance escolher no fluxo genérico logo abaixo.
-	if u.get("spriteKey", "") == "lich":
-		var reanimate_spell = _find_spell(u, func(s): return s.get("kind", "") == "reanimate")
-		if reanimate_spell != null and u["mp"] >= reanimate_spell["mpCost"]:
-			var reanimate_target = pick_resurrect_target(u, reanimate_spell, true)
-			if reanimate_target != null:
-				cast_reanimate(u, reanimate_target, reanimate_spell)
-				advance_to_next_turn()
-				return
-		var wounds_spell = _find_spell(u, func(s): return s.get("kind", "") == "inflict-wounds")
-		if wounds_spell != null and u["mp"] >= wounds_spell["mpCost"]:
-			var heal_target = _pick_inflict_wounds_heal_target(u, wounds_spell)
-			if heal_target != null:
-				cast_inflict_wounds(u, wounds_spell, {"x": heal_target["x"], "y": heal_target["y"]})
-				advance_to_next_turn()
-				return
-		var decay_spell = _find_spell(u, func(s): return s.get("kind", "") == "decay-pulse")
-		if decay_spell != null and u["mp"] >= decay_spell["mpCost"] and _decay_pulse_value(u, decay_spell) >= 2:
-			cast_decay_pulse(u, decay_spell)
-			advance_to_next_turn()
-			return
-		if wounds_spell != null and u["mp"] >= wounds_spell["mpCost"]:
-			var attack_spot = pick_best_blast_spot(u, wounds_spell)
-			if attack_spot != null:
-				cast_inflict_wounds(u, wounds_spell, attack_spot)
-				advance_to_next_turn()
-				return
-		var skeleton_spell = _find_spell(u, func(s): return s.get("kind", "") == "summon-skeleton")
-		var zombie_spell = _find_spell(u, func(s): return s.get("kind", "") == "summon-zombie")
-		var chosen_summon = skeleton_spell if (skeleton_spell != null and (zombie_spell == null or rng.randf() < 0.5)) else zombie_spell
-		if chosen_summon != null and u["mp"] >= chosen_summon["mpCost"] and _wants_to_summon_reinforcement(u):
-			var summon_spot3 = _summon_spot_in_range(u, chosen_summon)
-			if summon_spot3 != null:
-				if chosen_summon["kind"] == "summon-skeleton":
-					cast_summon_skeleton(u, chosen_summon, summon_spot3)
-				else:
-					cast_summon_zombie(u, chosen_summon, summon_spot3)
-				advance_to_next_turn()
-				return
-
-	# Dragão Vermelho: Cone de Fogo quando pega 2+ inimigos (mesma
-	# pick_best_cone_direction já usada pela Lava Humana); Cauda em vez de
-	# Garra quando o alvo adjacente está com CT alto (perto de agir — o
-	# efeito -30 CT vale mais nesse momento, pedido do usuário). Sem essa
-	# checagem explícita, pick_weapon_for_distance (mais abaixo) nunca
-	# escolheria Cauda sozinha: Garra/Cauda têm a mesma chance de acerto
-	# (80%) e Garra vem primeiro no array de armas.
-	if u.get("spriteKey", "") == "dragon":
-		var fire_cone_spell = _find_spell(u, func(s): return s.get("kind", "") == "cone-fire")
-		if fire_cone_spell != null and u["mp"] >= fire_cone_spell["mpCost"]:
-			var best_cone = pick_best_cone_direction(u, fire_cone_spell)
-			if best_cone != null:
-				var enemy_count_in_cone := 0
-				for t in best_cone:
-					var occ = unit_at(t["x"], t["y"])
-					if occ != null and occ["team"] != u["team"]:
-						enemy_count_in_cone += 1
-				if enemy_count_in_cone >= 2:
-					cast_fire_cone(u, fire_cone_spell, best_cone)
-					advance_to_next_turn()
-					return
-		if target != null and manhattan(u, target) <= 1 and int(target.get("ct", 0)) >= 70:
-			var tail_weapon = null
-			for w in u["weapons"]:
-				if w["name"] == "Cauda":
-					tail_weapon = w
-					break
-			if tail_weapon != null:
-				enemy_attack_then_advance(u, target, tail_weapon)
-				return
-
-	if u.has("spells"):
-		var root_spell = _find_spell(u, func(s): return s.get("kind") == "root")
-		if root_spell != null and u["mp"] >= root_spell["mpCost"] and not is_rooted(target) and is_in_weapon_range(root_spell, manhattan(u, target)):
-			cast_root_spell(u, target, root_spell)
-			advance_to_next_turn()
-			return
-
-		var blast_spell = null
-		for s in u["spells"]:
-			if s.get("targetMode") == "point-aoe" and u["mp"] >= s["mpCost"]:
-				blast_spell = s
-				break
-		if blast_spell != null:
-			var spot = pick_best_blast_spot(u, blast_spell)
-			if spot != null:
-				cast_fireball(u, blast_spell, spot)
-				advance_to_next_turn()
-				return
-
-		var freeze_spell = _find_spell(u, func(s): return s.get("kind") == "freeze-aoe")
-		if freeze_spell != null and u["mp"] >= freeze_spell["mpCost"]:
-			var spot = pick_best_freeze_target(u, freeze_spell)
-			if spot != null:
-				cast_freeze_aoe(u, freeze_spell, spot)
-				advance_to_next_turn()
-				return
-
-		var windstorm_spell2 = _find_spell(u, func(s): return s.get("kind") == "windstorm")
-		if windstorm_spell2 != null and u["mp"] >= windstorm_spell2["mpCost"]:
-			# Corrigido: usava pick_best_cone_direction, que só conta quantos
-			# INIMIGOS uma direção pega e ignora se ela também atravessa
-			# aliados — diferente do bloco específico da Fada logo acima
-			# (que usa pick_best_safe_aoe_direction). Esse era o caminho que
-			# deixava a Ventania acertar o próprio time quando a direção
-			# "limpa" de 2+ heróis não existia.
-			var safe_windstorm = pick_best_safe_aoe_direction(u, func(dx, dy): return compute_cone_tiles_for_dir(u, dx, dy, windstorm_spell2["maxRange"]))
-			var cone_tiles = safe_windstorm["tiles"] if safe_windstorm != null else null
-			if cone_tiles != null:
-				cast_windstorm(u, windstorm_spell2, cone_tiles)
-				advance_to_next_turn()
-				return
-
-		var growth_spell = _find_spell(u, func(s): return s.get("kind") == "growth-attack")
-		if growth_spell != null and u["mp"] >= growth_spell["mpCost"]:
-			var dirs8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
-			var adjacent_enemy_count := 0
-			for d in dirs8:
-				var t := {"x": u["x"] + d[0], "y": u["y"] + d[1]}
-				if not in_bounds(t["x"], t["y"]):
-					continue
-				var occ = unit_at(t["x"], t["y"])
-				if occ != null and occ["team"] != u["team"]:
-					adjacent_enemy_count += 1
-			if adjacent_enemy_count >= 2:
-				cast_growth_attack(u, growth_spell)
-				advance_to_next_turn()
-				return
-
-		var cone_spell = _find_spell(u, func(s): return s.get("kind") == "cone-poison")
-		if cone_spell != null and u["mp"] >= cone_spell["mpCost"]:
-			var cone_tiles = pick_best_cone_direction(u, cone_spell)
-			if cone_tiles != null:
-				cast_poison_cone(u, cone_spell, cone_tiles)
-				advance_to_next_turn()
-				return
-
-		var charge_spell = _find_spell(u, func(s): return s.get("kind") == "charge")
-		if charge_spell != null and u["mp"] >= charge_spell["mpCost"]:
-			var charge_targets := compute_charge_targets(u)
-			if charge_targets.size() > 0:
-				var chosen = charge_targets[0]
-				for t in charge_targets:
-					if manhattan(t, target) < manhattan(chosen, target):
-						chosen = t
-				var victim = unit_at(chosen["x"], chosen["y"])
-				cast_charge(u, victim, charge_spell)
-				advance_to_next_turn()
-				return
-
-		var trample_spell = _find_spell(u, func(s): return s.get("targetMode") == "trample")
-		if trample_spell != null and u["mp"] >= trample_spell["mpCost"]:
-			var dirs4 = [[1, 0], [-1, 0], [0, 1], [0, -1]]
-			var best_dir = null
-			var best_hits := 0
-			for d in dirs4:
-				var hits := 0
-				for dist in range(1, trample_spell["maxRange"] + 1):
-					var x: int = u["x"] + d[0] * dist
-					var y: int = u["y"] + d[1] * dist
-					if not in_bounds(x, y):
-						break
-					var occ = unit_at(x, y)
-					if occ != null and occ["team"] == u["team"]:
-						break
-					if occ != null:
-						hits += 1
-				if hits > best_hits:
-					best_hits = hits
-					best_dir = d
-			if best_dir != null:
-				var tile := {"x": u["x"] + best_dir[0], "y": u["y"] + best_dir[1]}
-				cast_trample(u, trample_spell, tile)
-				advance_to_next_turn()
-				return
-
-	var weapon_in_range = pick_weapon_for_distance(get_attack_options_against(u, target), manhattan(u, target), target)
-
-	var is_critically_hurt: bool = u["hp"] < u["maxHp"] * 0.5
-	if is_critically_hurt and not is_rooted(u):
-		var reachable := compute_reachable(u)
-		var soul_tiles: Array = []
-		for t in reachable:
-			for s in souls:
-				if s["x"] == t["x"] and s["y"] == t["y"]:
-					soul_tiles.append(t)
-					break
-		if soul_tiles.size() > 0:
-			var soul_tile = null
-			for t in soul_tiles:
-				if pick_weapon_for_distance(get_attack_options_against(u, target), manhattan(t, target), target) != null:
-					soul_tile = t
-					break
-			if soul_tile == null:
-				soul_tile = soul_tiles[0]
-			perform_move(u, soul_tile)
-			var follow_up_weapon = pick_weapon_for_distance(get_attack_options_against(u, target), manhattan(u, target), target)
-			if follow_up_weapon != null and target["hp"] > 0:
-				enemy_attack_then_advance(u, target, follow_up_weapon)
-			else:
-				advance_to_next_turn()
-			return
-
-	if weapon_in_range != null:
-		enemy_attack_then_advance(u, target, weapon_in_range)
-		return
-
-	if is_rooted(u):
-		_log("%s está preso pelas raízes e não pode se mover." % u["name"])
-	else:
-		var reachable := compute_reachable(u)
-		var wants_soul: bool = u["hp"] < u["maxHp"] or (u.has("maxMp") and u["mp"] < u["maxMp"])
-		var soul_tile = null
-		if wants_soul:
-			var soul_tiles: Array = []
-			for t in reachable:
-				for s in souls:
-					if s["x"] == t["x"] and s["y"] == t["y"]:
-						soul_tiles.append(t)
-						break
-			for t in soul_tiles:
-				if pick_weapon_for_distance(get_attack_options(u), manhattan(t, target), target) != null:
-					soul_tile = t
-					break
-			if soul_tile == null and soul_tiles.size() > 0:
-				soul_tile = soul_tiles[0]
-
-		var survival_tile = null
-		var own_team_alive_count: int = team_units(u["team"]).filter(func(o): return o["hp"] > 0).size()
-		if soul_tile == null and own_team_alive_count == 1:
-			var home_structure = null
-			for s in structures:
-				if s["team"] == u["team"] and not s["destroyed"]:
-					home_structure = s
-					break
-			var already_home := false
-			if home_structure != null:
-				for t in (home_structure["tiles"] as Array):
-					if t["x"] == u["x"] and t["y"] == u["y"]:
-						already_home = true
-						break
-			if home_structure != null and not already_home:
-				var occupant = structure_occupant(home_structure)
-				if occupant == null:
-					var home_tiles: Array = []
-					for t in reachable:
-						for ht in (home_structure["tiles"] as Array):
-							if ht["x"] == t["x"] and ht["y"] == t["y"]:
-								home_tiles.append(t)
-								break
-					if home_tiles.size() > 0:
-						for t in home_tiles:
-							if pick_weapon_for_distance(get_attack_options(u), manhattan(t, target), target) != null:
-								survival_tile = t
-								break
-						if survival_tile == null:
-							survival_tile = home_tiles[0]
-					else:
-						var tiles: Array = home_structure["tiles"]
-						var anchor = tiles[4] if tiles.size() > 4 else tiles[0]
-						var best_partial_dist: int = manhattan(u, anchor)
-						for t in reachable:
-							var d: int = manhattan(t, anchor)
-							if d < best_partial_dist:
-								best_partial_dist = d
-								survival_tile = t
-
-		var mountain_tile = null
-		if soul_tile == null and survival_tile == null and (u.get("spriteKey") == "xama" or u.get("spriteKey") == "fada"):
-			var mountain = null
-			for s in structures:
-				if s["type"] == "mountain" and not s["destroyed"]:
-					mountain = s
-					break
-			var already_in_mountain := false
-			if mountain != null:
-				for t in (mountain["tiles"] as Array):
-					if t["x"] == u["x"] and t["y"] == u["y"]:
-						already_in_mountain = true
-						break
-			if mountain != null and not already_in_mountain:
-				var occupant = structure_occupant(mountain)
-				if occupant == null:
-					var only_one_enemy_left: bool = opposing_team_of(u).filter(func(o): return o["hp"] > 0).size() == 1
-					var ally_low_hp := false
-					for o in team_units("enemy"):
-						if o["name"] != u["name"] and o["hp"] > 0 and o["hp"] < o["maxHp"] * 0.4:
-							ally_low_hp = true
-							break
-					var wants_mountain_often: bool = rng.randf() < 0.35
-					if only_one_enemy_left or ally_low_hp or wants_mountain_often:
-						var mountain_tiles: Array = []
-						for t in reachable:
-							for mt in (mountain["tiles"] as Array):
-								if mt["x"] == t["x"] and mt["y"] == t["y"]:
-									mountain_tiles.append(t)
-									break
-						for t in mountain_tiles:
-							if pick_weapon_for_distance(get_attack_options(u), manhattan(t, target), target) != null:
-								mountain_tile = t
-								break
-						if mountain_tile == null and mountain_tiles.size() > 0:
-							mountain_tile = mountain_tiles[0]
-
-		var best = soul_tile if soul_tile != null else (survival_tile if survival_tile != null else mountain_tile)
-		if best == null:
-			# Distância real de caminho (BFS ignorando parede/bloqueio) em vez de
-			# Manhattan em linha reta — regressão da Horda: um monstro nascido
-			# dentro do "bolso" da montanha, só com saída pela escada, tinha
-			# Manhattan MENOR ficando parado perto da parede errada do que
-			# desviando até a escada (que a princípio AUMENTA a distância em
-			# linha reta), então nunca saía do lugar. BFS mede o desvio como
-			# progresso de verdade.
-			var path_dist := _walkable_path_distance_map(target["x"], target["y"])
-			var start_key := tile_key(u["x"], u["y"])
-			var best_dist: int = int(path_dist.get(start_key, manhattan(u, target)))
-			for t in reachable:
-				var dist: int = int(path_dist.get(tile_key(t["x"], t["y"]), manhattan(t, target)))
-				if dist < best_dist:
-					best_dist = dist
-					best = t
-
-		if best != null:
-			perform_move(u, best)
-		else:
-			_log("%s não pôde se mover." % u["name"])
-
-	var follow_up_weapon2 = pick_weapon_for_distance(get_attack_options(u), manhattan(u, target), target)
-	if follow_up_weapon2 != null and target["hp"] > 0:
-		enemy_attack_then_advance(u, target, follow_up_weapon2)
-	else:
-		advance_to_next_turn()
-
+func _wants_to_summon_reinforcement(u: Dictionary) -> bool: return EnemyAI._wants_to_summon_reinforcement(self, u)
+func enemy_act(u: Dictionary) -> void: EnemyAI.enemy_act(self, u)

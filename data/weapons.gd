@@ -51,6 +51,46 @@ static func build() -> Dictionary:
 			"tooltipNote": "Se acertar (70%), tem 40% de chance de roubar 15 de CT do alvo.",
 			"sfx": "ranged",
 		},
+		# Pedido do usuário: ataques do Monge. Soco é a arma corpo a corpo
+		# básica dele (mesmo critMultiplier 2 do resto do catálogo, ver
+		# Espada/Arco/Funda). A Rajada de Golpes agora é habilidade (ver spells.gd:
+		# monkFlurry): reaproveita o campo genérico "hits" (já usado pelo Míssil
+		# Mágico da Maga, ver GameState.perform_attack) pra disparar DOIS
+		# golpes em sequência, cada um rolando acerto/crítico/dano próprios —
+		# o segundo sai mesmo quando o primeiro erra, porque o laço de
+		# perform_attack só para cedo se o alvo morrer. "damageType":
+		# "physical" é obrigatório aqui: damage_type_of classifica como
+		# "magic" qualquer item com mpCost, e a Rajada é soco puro (mesmo
+		# motivo do bardCrossbow acima).
+		# Pedido do usuário: Samurai. Espada corpo a corpo própria (6-12, 80%
+		# de acerto, 15% de crítico, CT 50 = o padrão do corpo a corpo). O Arco
+		# dele é LITERALMENTE o w["bow"] do Arqueiro (ver units.gd).
+		# Pedido do usuário: Vestruz. Cuspe Afiado é ataque à distância de 0 MP;
+		# o alcance/mira (1-3, só linha reta cardeal) é COPIADO de Arremessar
+		# Espada do Guerreiro em Units.build(), nunca duplicado aqui.
+		"vestruzSpit": {
+			"name": "Cuspe Afiado", "icon": "💦", "ctCost": 50,
+			"damageMin": 3, "damageMax": 6, "critMultiplier": 2, "critChance": 0.15,
+			"hitChance": 0.8, "minRange": 1, "maxRange": 3, "cardinalOnly": true,
+			"projectile": "spit", "spriteAction": "cuspe",
+			"tooltipNote": "Cospe um jato afiado, só nas 4 direções cardeais, até 3 quadrados (mesma mira do Arremessar Espada). Custa 0 MP.",
+			"sfx": "ranged",
+		},
+		"samuraiSword": {
+			"name": "Espada", "icon": "🗡", "ctCost": 50,
+			"damageMin": 6, "damageMax": 12, "critMultiplier": 2, "critChance": 0.15,
+			"hitChance": 0.8, "swing": "slash", "minRange": 1, "maxRange": 1,
+			"tooltipNote": "Golpe de katana corpo a corpo.",
+			"sfx": "melee",
+		},
+		"monkPunch": {
+			"name": "Soco", "icon": "👊", "ctCost": 50,
+			"damageMin": 5, "damageMax": 10, "critMultiplier": 2, "critChance": 0.15,
+			"hitChance": 0.8, "swing": "blunt", "minRange": 1, "maxRange": 1,
+			"spriteAction": "soco",
+			"tooltipNote": "Golpe corpo a corpo básico do Monge.",
+			"sfx": "melee",
+		},
 		"dagger": {
 			"name": "Adaga", "icon": "🔪", "ctCost": 50,
 			"damageMin": 2, "damageMax": 5, "critMultiplier": 2, "hitChance": 1,
@@ -151,7 +191,9 @@ static func build() -> Dictionary:
 			"sfx": "melee",
 		},
 		"throwLog": {
-			"name": "Tacar Tronco", "icon": "🪵", "ctCost": 70,
+			# Pedido do usuário: ícone próprio (era o mesmo 🪵 do Tronco, o outro
+			# ataque do Troll).
+			"name": "Tacar Tronco", "icon": "🪃", "ctCost": 70,
 			"damageMin": 6, "damageMax": 8, "critMultiplier": 2, "critChance": 0.1,
 			"hitChance": 0.8, "minRange": 1, "maxRange": 3, "cardinalOnly": true,
 			"targetMode": "cardinal-blast", "bandLength": 3, "bandWidth": 3,

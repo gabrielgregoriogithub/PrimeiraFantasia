@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://d285m4a5pctcd"
-path="res://.godot/imported/WarriorShield_shield_wood_1024.png-c0f8ef3822e623480f4331a7395cee87.ctex"
+path.s3tc="res://.godot/imported/WarriorShield_shield_wood_1024.png-c0f8ef3822e623480f4331a7395cee87.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "d6679b114ed3b8a2df05d0a3ddae0aef"
@@ -14,7 +15,7 @@ generator_parameters={
 [deps]
 
 source_file="res://assets/characters/warrior_v3/equipment/WarriorShield_shield_wood_1024.png"
-dest_files=["res://.godot/imported/WarriorShield_shield_wood_1024.png-c0f8ef3822e623480f4331a7395cee87.ctex"]
+dest_files=["res://.godot/imported/WarriorShield_shield_wood_1024.png-c0f8ef3822e623480f4331a7395cee87.s3tc.ctex"]
 
 [params]
 

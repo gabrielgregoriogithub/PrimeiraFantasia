@@ -27,7 +27,7 @@ static func build() -> Dictionary:
 			"hasMoved": false, "hasActed": false, "statusEffects": [],
 			"facing": {"dx": 1, "dy": 0}, "bodyColor": "#5c8a52", "spriteKey": "arqueiro",
 			"weapons": [w["bow"], w["dagger"]],
-			"spells": [s["trueShot"], s["fireArrow"], s["iceArrow"], s["pierceShot"], s["quickShot"], s["longShot"]],
+			"spells": [s["trueShot"], s["fireArrow"], s["iceArrow"], s["pierceShot"], s["quickShot"], s["longShot"], s["arrowRain"]],
 			"singleSelfAbilityPerTurn": true,
 		},
 		"mago": {
@@ -36,7 +36,7 @@ static func build() -> Dictionary:
 			"hasMoved": false, "hasActed": false, "statusEffects": [],
 			"facing": {"dx": 1, "dy": 0}, "bodyColor": "#3a5ba0", "spriteKey": "mago",
 			"weapons": [w["cajado"], w["iceRay"]],
-			"spells": [s["fireball"], s["missile"], s["lightning"], s["iceCone"], s["cure"], s["regenAoe"], s["resurrect"]],
+			"spells": [s["fireball"], s["missile"], s["lightning"], s["iceCone"]],
 		},
 		"ladino": {
 			"name": "Ladino", "icon": "🥷", "team": "player", "x": 2, "y": 11,
@@ -46,16 +46,16 @@ static func build() -> Dictionary:
 			"backstabBonus": {"side": [1, 2], "back": [2, 4], "invisible": [2, 4]}, "hasOpportunityAttack": true, "magicEvasion": 0.1,
 			"bodyColor": "#4a3b63", "spriteKey": "ladino",
 			"weapons": [w["crossbow"], w["dirk"]],
-			"spells": [s["invisibility"], s["weakeningStrike"], s["trap"]],
+			"spells": [s["invisibility"], s["weakeningStrike"], s["trap"], s["agility"], s["swiftFeet"], s["evasiveManeuver"], s["stealHp"], s["stealMp"], s["stealCt"]],
 		},
 		"goblin": {
 			"name": "Goblin", "icon": "👹", "team": "enemy", "x": 10, "y": 5,
-			"hp": 30, "maxHp": 30, "moveRange": 4, "speed": 12, "ct": 0, "mp": 8, "maxMp": 8,
+			"hp": 30, "maxHp": 30, "moveRange": 4, "speed": 12, "ct": 0, "mp": 10, "maxMp": 10,
 			"hasMoved": false, "hasActed": false, "statusEffects": [],
 			"facing": {"dx": -1, "dy": 0}, "innateEvasion": 0.1,
 			"bodyColor": "#6b7a3a", "spriteKey": "goblin",
-			"weapons": [w["shortSword"], w["sling"]],
-			"spells": [s["agility"], s["swiftFeet"], s["evasiveManeuver"]],
+			"weapons": [w["dagger"], w["sling"]],
+			"spells": [s["agility"], s["swiftFeet"], s["evasiveManeuver"], s["lowBlow"], s["poisonPotion"], s["sandInEyes"], s["hitAndRun"], s["goblinAmbush"], s["stolenBarrel"], s["playDead"]],
 		},
 		"orc": {
 			"name": "Orc", "icon": "🧌", "team": "enemy", "x": 10, "y": 7,
@@ -73,7 +73,7 @@ static func build() -> Dictionary:
 			"mp": 20, "maxMp": 20, "hasMoved": false, "hasActed": false, "statusEffects": [],
 			"facing": {"dx": -1, "dy": 0}, "bodyColor": "#5a3d7a", "spriteKey": "xama",
 			"weapons": [w["zarabatana"]],
-			"spells": [s["cure"], s["regenAoe"], s["resurrect"], s["creepingDestruction"], s["poisonCone"], s["vinePrison"]],
+			"spells": [s["cure"], s["regenAoe"], s["resurrect"], s["creepingDestruction"], s["poisonCone"], s["vinePrison"], s["reincarnation"]],
 		},
 		"fada": {
 			"name": "Fada", "icon": "🧚", "team": "enemy", "x": 10, "y": 11,
@@ -82,7 +82,7 @@ static func build() -> Dictionary:
 			"facing": {"dx": -1, "dy": 0}, "flying": true,
 			"bodyColor": "#d67ab8", "spriteKey": "fada",
 			"weapons": [w["shock"], w["light"]],
-			"spells": [s["paralysis"], s["cure"], s["regenAoe"], s["resurrect"], s["soundBlast"], s["windstorm"]],
+			"spells": [s["paralysis"], s["cure"], s["regenAoe"], s["resurrect"], s["soundBlast"], s["windstorm"], s["reincarnation"]],
 		},
 		"quimico": {
 			"name": "Químico", "icon": "🧑‍🔬", "team": "player", "x": 2, "y": 3,
@@ -92,7 +92,7 @@ static func build() -> Dictionary:
 			"weapons": [w["firearm"]],
 			"spells": [
 				s["healPotion"], s["manaPotion"], s["antidote"], s["bomb"], s["iceBomb"],
-				s["regenAoeAlchemist"], s["resurrectAlchemist"], s["explosiveShot"],
+				s["regenAoeAlchemist"], s["resurrectAlchemist"], s["reincarnation"], s["explosiveShot"],
 			],
 		},
 		"bardo": {
@@ -104,11 +104,48 @@ static func build() -> Dictionary:
 			"weapons":[w["bardCrossbow"]],
 			"spells":[s["bardSongHeal"],s["bardSongInspiration"],s["bardSongDistraction"],s["bardSongPain"]],
 		},
+		# Pedido do usuário: Monge. Funda é LITERALMENTE a mesma arma do
+		# Goblin (w["sling"] — mesmo alcance, custo, acerto, dano e projétil),
+		# não uma cópia com números repetidos.
+		"monge": {
+			"name": "Monge", "icon": "🧘", "team": "player", "x": 3, "y": 3,
+			"hp": 30, "maxHp": 30, "moveRange": 8, "speed": 11, "ct": 0, "mp": 10, "maxMp": 10,
+			"hasMoved": false, "hasActed": false, "statusEffects": [],
+			"facing": {"dx": 1, "dy": 0}, "bodyColor": "#c8873f", "spriteKey": "monge",
+			"weapons": [w["monkPunch"], w["sling"]],
+			"spells": [s["monkFocus"], s["monkDash"], s["dragonKick"], s["monkMeditate"], s["monkFlurry"]],
+		},
+		# Pedido do usuário: Samurai. O Arco é o mesmo w["bow"] do Arqueiro (mesmo
+		# alcance/acerto/crítico/dano/CT/projétil); só ganha "spriteAction" pra
+		# usar a pose de saque da katana como pose de tiro (o Samurai não tem
+		# arte de arco).
+		"samurai": {
+			"name": "Samurai", "icon": "🏯", "team": "player", "x": 3, "y": 5,
+			"hp": 40, "maxHp": 40, "moveRange": 3, "speed": 9, "ct": 0, "mp": 6, "maxMp": 6,
+			"hasMoved": false, "hasActed": false, "statusEffects": [],
+			"facing": {"dx": 1, "dy": 0}, "bodyColor": "#a3242b", "spriteKey": "samurai",
+			"weapons": [w["samuraiSword"], DataUtil.merge(w["bow"], {"spriteAction": "bow"})],
+			"spells": [s["samuraiDualWield"], s["samuraiQuickDraw"], s["samuraiMeditate"], s["samuraiIaijutsu"], s["samuraiHeronStance"], s["samuraiGuardBreak"], s["samuraiCrescentSlash"], s["samuraiWindSlash"], s["samuraiLastResolve"]],
+		},
+		# Pedido do usuário: Vestruz, montaria voadora que também age sozinha.
+		# `flying` é o MESMO campo booleano da Fada (mesma mecânica de voo);
+		# `isMount` habilita a montaria (ver GameState.mount_unit). O alcance do
+		# Cuspe Afiado vem do Arremessar Espada do Guerreiro.
+		"vestruz": {
+			"name": "Vestruz", "icon": "🐦", "team": "player", "x": 3, "y": 9,
+			"hp": 30, "maxHp": 30, "moveRange": 7, "speed": 12, "ct": 0, "mp": 6, "maxMp": 6,
+			"hasMoved": false, "hasActed": false, "statusEffects": [],
+			"facing": {"dx": 1, "dy": 0}, "flying": true, "isMount": true,
+			"bodyColor": "#e0a63a", "spriteKey": "vestruz",
+			"weapons": [DataUtil.merge(w["vestruzSpit"], {"minRange": s["throwSword"]["minRange"], "maxRange": s["throwSword"]["maxRange"], "cardinalOnly": s["throwSword"]["cardinalOnly"]})],
+			"spells": [s["vestruzKick"], s["vestruzDash"], s["vestruzDust"], s["vestruzHeal"]],
+		},
 		"troll": {
 			"name": "Troll", "icon": "👺", "team": "enemy", "x": 10, "y": 3,
 			"hp": 50, "maxHp": 50, "moveRange": 4, "speed": 8, "ct": 0, "mp": 10, "maxMp": 10,
 			"hasMoved": false, "hasActed": false, "statusEffects": [],
 			"facing": {"dx": -1, "dy": 0},
+			"footprintWidth": 2, "footprintHeight": 2, "footprintSize": 2,
 			"hpRegenPerTurn": 1, "counterAttackChance": 0.1, "counterWeapon": w["trollCounter"],
 			"bodyColor": "#5a6b52", "spriteKey": "troll",
 			"weapons": [w["trunk"], w["throwLog"]],
@@ -120,7 +157,7 @@ static func build() -> Dictionary:
 ## playerTeam = [guerreiro, arqueiro, mago, ladino, quimico]
 ## enemyTeam  = [goblin, orc, xama, fada, troll]
 static func player_team_keys() -> Array:
-	return ["guerreiro", "arqueiro", "mago", "ladino", "quimico", "bardo"]
+	return ["guerreiro", "arqueiro", "mago", "ladino", "quimico", "bardo", "monge", "samurai", "vestruz"]
 
 static func enemy_team_keys() -> Array:
 	return ["goblin", "orc", "xama", "fada", "troll"]

@@ -8,10 +8,23 @@ const ART_DIRECTION := preload("res://data/art_direction_config.gd")
 ## papel que scene3d.js tinha no protótipo JS: só lê o estado já calculado
 ## pelo motor). Reaproveita os PNGs de assets/tiles/ copiados do protótipo.
 
-const TILE_SIZE := 64
+## Pedido do usuário: tiles 50% maiores (era 64). Única fonte de verdade pro
+## tamanho do tile — quase todo o desenho de terreno/estruturas neste arquivo
+## já é parametrizado por TILE_SIZE, então o aumento se propaga sozinho.
+const TILE_SIZE := 96
 
 var state: GameState
 var scenario_definition: Dictionary = {"id": ScenarioManager.FIELD}
+
+func _is_campo_like(id: String) -> bool:
+	return id == ScenarioManager.FIELD
+
+## Overlay de debug temporário (pedido do usuário pro PORTO, mas genérico —
+## funciona em qualquer cenário): verde translúcido em tiles battleable e
+## livres (GameState.is_battleable + sem ocupante), vermelho no resto.
+## Desligado por padrão, sem custo nenhum quando false. Ver
+## _draw_battleable_debug().
+var debug_show_battleable: bool = false
 
 ## Tiles alcançáveis de movimento, alvos atacáveis e área/alvo de magia
 ## selecionada (Fase 6) — só destaque visual, a fonte de verdade continua
@@ -46,6 +59,25 @@ var _highlight_fading := false
 ## offset de recorte é zero e a câmera fica centralizada na viewport,
 ## reproduzindo pixel a pixel o comportamento de antes (sem câmera nenhuma).
 var camera: Camera2D
+## --- Zoom/arraste interativos (pedido do usuário) -------------------------
+## Fonte única de verdade pro zoom e deslocamento de câmera do jogador —
+## _update_camera() é a ÚNICA função que lê essas duas variáveis pra
+## calcular camera.zoom/camera.position; tudo (botões de zoom, arrastar com o
+## mouse) só MUDA view_zoom/view_pan e chama _update_camera() de novo, nunca
+## mexe na câmera diretamente. Só vale pra cenários "soltos" (Campo/Torre/
+## Vila) — a Horda mantém sua janela fixa 13x13 (LUA_VALLEY_CROP_ORIGIN),
+## sem zoom nem arrasto, exatamente como já era.
+## Pedido do usuário: alcance de zoom limitado a 60%-120% (era 50%-200%).
+const VIEW_ZOOM_MIN := 0.6
+const VIEW_ZOOM_MAX := 1.2
+const VIEW_ZOOM_STEP := 0.2
+var view_zoom := 1.0
+## Deslocamento em pixels do MUNDO (não de tela) somado ao centro do tabuleiro
+## pra decidir o que a câmera mostra — positivo desloca a área visível pra
+## direita/baixo. Clampado a cada _update_camera() conforme o zoom atual (ver
+## _clamp_view_pan), então nunca precisa ser resetado manualmente ao mudar
+## de zoom, só recalculado.
+var view_pan := Vector2.ZERO
 var camera_shake: CameraShake2D
 var _ambient_life: AmbientLifeManager
 ## ETAPA 18 — vento global puramente visual (0 calmo .. 1 rajada), varia
@@ -77,6 +109,9 @@ var _tex_cache: Dictionary = {}
 var _soul_phase := 0.0
 var _anim_time_ms := 0.0
 var _environment_props: Array[Node2D] = []
+## Nós do chão/props/luzes/névoa dos cenários de props recortados
+## (TEMPLO/CEMITÉRIO, ver SceneryVisuals) — recriados a cada troca de cenário.
+var _scenery_nodes: Array = []
 var _grass_reactions: Array[Dictionary] = []
 var _art_profile: Dictionary = ART_DIRECTION.DEFAULT_BIOME.duplicate(true)
 
@@ -121,13 +156,17 @@ class EnvironmentPropVisual extends Node2D:
 		queue_redraw()
 
 	func _draw() -> void:
-		var shadow_scale := 1.0 if kind == "tree" else 1.25
-		var shadow_points := PackedVector2Array()
-		for i in 24:
-			var angle := TAU * float(i) / 24.0
-			shadow_points.append(Vector2(visual_size.x * 0.33 * shadow_scale * cos(angle) + 11.0, visual_size.y * 0.09 * sin(angle) + 2.0))
-		draw_colored_polygon(shadow_points, Color(0.045, 0.06, 0.055, 0.27))
-		draw_ellipse_contact(Vector2(0, 0), Vector2(visual_size.x * 0.18, 5.0))
+		# Pedido do usuário: Castelo/Montanha do Campo pareciam "flutuando" com
+		# essa sombra (calibrada pro tronco fino de uma árvore, não pra base de
+		# uma estrutura 3x3 inteira) — removida só pra esses dois kinds.
+		if kind != "castle" and kind != "mountain":
+			var shadow_scale := 1.0 if kind == "tree" else 1.25
+			var shadow_points := PackedVector2Array()
+			for i in 24:
+				var angle := TAU * float(i) / 24.0
+				shadow_points.append(Vector2(visual_size.x * 0.33 * shadow_scale * cos(angle) + 11.0, visual_size.y * 0.09 * sin(angle) + 2.0))
+			draw_colored_polygon(shadow_points, Color(0.045, 0.06, 0.055, 0.27))
+			draw_ellipse_contact(Vector2(0, 0), Vector2(visual_size.x * 0.18, 5.0))
 		# ETAPA 18 — vento global visual (BoardView.wind_strength, 0..1,
 		# varia devagar entre calmo e rajada): só escala a copa das árvores,
 		# nunca cria movimento novo em props que hoje ficam parados.
@@ -197,6 +236,12 @@ const TERRAIN_STATIC_TEXTURES := {
 	# toco de árvore como indicador genérico de "destruído" por enquanto.
 	"house-rubble": "res://assets/tiles/stump.png",
 	"tent-rubble": "res://assets/tiles/stump.png",
+	# Píer do PORTO: tábuas reais (recorte da referência do usuário, ver
+	# ASSET_SOURCES.md), desenhadas tile a tile pelo loop genérico acima
+	# (textura repete bem, ao contrário de "porto-water" — ver
+	# _draw_porto_board() pra água/estrada, que precisam de composição
+	# própria e por isso NÃO entram aqui).
+	"porto-pier": "res://assets/props/porto/pixel/porto_dock_plank.png",
 }
 
 const GRASS_TEXTURE := "res://assets/tiles/grass.png"
@@ -225,6 +270,74 @@ const CURATED_PROP_TEXTURES := {
 	"village-watertower": "res://assets/props/village/village_watertower.png",
 	"village-smallbarn": "res://assets/props/village/village_smallbarn.png",
 	"village-openbarn": "res://assets/props/village/village_openbarn.png",
+	# Obstáculos novos da Vila (Kenney Fantasy Town, CC0 — ver ASSET_SOURCES.md):
+	# ao contrário dos demais props curados acima (puramente decorativos), estes
+	# três têm sua célula incluída em "blocked_tiles" por _village_definition()
+	# (scenario_manager.gd), então bloqueiam movimento de verdade.
+	"village-fence-broken": "res://assets/props/village/village_fence_broken.png",
+	"village-barricade": "res://assets/props/village/village_barricade.png",
+	"village-bridge-broken": "res://assets/props/village/village_bridge_broken.png",
+	# Carroça de mercador do PORTO (Kenney Fantasy Town, CC0 — ver
+	# ASSET_SOURCES.md) — sem equivalente no recorte pixel-art da referência,
+	# mantém o asset 3D original; os demais props do PORTO abaixo são
+	# recortes reais da própria imagem de referência do usuário.
+	"porto-cart": "res://assets/props/porto/porto_cart.png",
+	"porto-fence": "res://assets/props/porto/pixel/porto_fence.png",
+	"porto-barrel": "res://assets/props/porto/pixel/porto_barrel.png",
+	"porto-barrel-stack": "res://assets/props/porto/pixel/porto_barrel_stack.png",
+	"porto-crate": "res://assets/props/porto/pixel/porto_crate.png",
+	"porto-mossy-rock": "res://assets/props/porto/pixel/porto_mossy_rock.png",
+	"porto-boat": "res://assets/props/porto/pixel/porto_boat.png",
+	"porto-market-stall": "res://assets/props/porto/pixel/porto_market_stall.png",
+	"porto-awning": "res://assets/props/porto/pixel/porto_awning.png",
+	"porto-lantern-post": "res://assets/props/porto/pixel/porto_lantern_post.png",
+	"porto-lilypad": "res://assets/props/porto/pixel/porto_lilypad.png",
+	# Pedido do usuário (enriquecimento de decoração, prioridade no canto
+	# superior direito): recortes reais fornecidos pelo usuário fora do
+	# projeto (pasta `porto/`) — ver ASSET_SOURCES.md pra origem de cada um.
+		# "porto-house-2" é uma segunda casa, tratada como prop curado para
+		# manter a definição do cenário simples, mas renderizada em uma área 2x2.
+	"porto-house-2": "res://assets/props/porto/pixel/porto_house_2.png",
+	"porto-tree": "res://assets/props/porto/pixel/porto_tree.png",
+	"porto-lamp": "res://assets/props/porto/pixel/porto_lamp.png",
+	"porto-crate-2": "res://assets/props/porto/pixel/porto_crate_2.png",
+	"porto-sacks": "res://assets/props/porto/pixel/porto_sacks.png",
+	# Obstáculos e decorações do DESFILADEIRO — recortes reais da imagem de
+	# referência do usuário (ver assets/props/desfiladeiro/ASSET_SOURCES.md):
+	# 4 pedras, 4 lápides/monólitos e a rocha de cristal, um kind por
+	# instância pra usar cada recorte sem repetir a mesma arte.
+	"desfiladeiro-rock-1": "res://assets/props/desfiladeiro/desfiladeiro_rock_1.png",
+	"desfiladeiro-rock-2": "res://assets/props/desfiladeiro/desfiladeiro_rock_2.png",
+	"desfiladeiro-rock-3": "res://assets/props/desfiladeiro/desfiladeiro_rock_3.png",
+	"desfiladeiro-rock-4": "res://assets/props/desfiladeiro/desfiladeiro_rock_4.png",
+	"desfiladeiro-monolith-1": "res://assets/props/desfiladeiro/desfiladeiro_monolith_1.png",
+	"desfiladeiro-monolith-2": "res://assets/props/desfiladeiro/desfiladeiro_monolith_2.png",
+	"desfiladeiro-monolith-3": "res://assets/props/desfiladeiro/desfiladeiro_monolith_3.png",
+	"desfiladeiro-monolith-4": "res://assets/props/desfiladeiro/desfiladeiro_monolith_4.png",
+	"desfiladeiro-crystal": "res://assets/props/desfiladeiro/desfiladeiro_crystal_rock.png",
+	"desfiladeiro-bush-1": "res://assets/props/desfiladeiro/desfiladeiro_bush_1.png",
+	"desfiladeiro-bush-2": "res://assets/props/desfiladeiro/desfiladeiro_bush_2.png",
+	"desfiladeiro-bush-3": "res://assets/props/desfiladeiro/desfiladeiro_bush_3.png",
+	# Obstáculos e decorações da ESTRADA INVERNO — recortes reais da imagem de
+	# referência do usuário (ver assets/props/estrada_inverno/ASSET_SOURCES.md).
+	"estrada-inverno-well": "res://assets/props/estrada_inverno/estrada_inverno_well.png",
+	"estrada-inverno-rock-1": "res://assets/props/estrada_inverno/estrada_inverno_rock_1.png",
+	"estrada-inverno-rock-2": "res://assets/props/estrada_inverno/estrada_inverno_rock_2.png",
+	"estrada-inverno-rock-3": "res://assets/props/estrada_inverno/estrada_inverno_rock_3.png",
+	"estrada-inverno-barrel-1": "res://assets/props/estrada_inverno/estrada_inverno_barrel_1.png",
+	"estrada-inverno-barrel-2": "res://assets/props/estrada_inverno/estrada_inverno_barrel_2.png",
+	"estrada-inverno-skull": "res://assets/props/estrada_inverno/estrada_inverno_skull.png",
+	# Enriquecimento de decoração (pedido do usuário) — mais recortes reais da
+	# mesma referência do usuário (pasta `estrada inverno/` fora do projeto).
+	"estrada-inverno-log-1": "res://assets/props/estrada_inverno/estrada_inverno_log_1.png",
+	"estrada-inverno-log-2": "res://assets/props/estrada_inverno/estrada_inverno_log_2.png",
+	"estrada-inverno-stump": "res://assets/props/estrada_inverno/estrada_inverno_stump.png",
+	"estrada-inverno-snow-rocks-1": "res://assets/props/estrada_inverno/estrada_inverno_snow_rocks_1.png",
+	"estrada-inverno-snow-rocks-2": "res://assets/props/estrada_inverno/estrada_inverno_snow_rocks_2.png",
+	"estrada-inverno-snow-pebbles-1": "res://assets/props/estrada_inverno/estrada_inverno_snow_pebbles_1.png",
+	"estrada-inverno-snow-pebbles-2": "res://assets/props/estrada_inverno/estrada_inverno_snow_pebbles_2.png",
+	"estrada-inverno-snow-bush-1": "res://assets/props/estrada_inverno/estrada_inverno_snow_bush_1.png",
+	"estrada-inverno-snow-bush-2": "res://assets/props/estrada_inverno/estrada_inverno_snow_bush_2.png",
 	# Árvores da Vila reaproveitam as mesmas artes do Campo (tree1..5.png,
 	# BoardLayout.TREE_ART_VARIANTS) — pedido do usuário, pra ficar visualmente
 	# consistente entre os dois cenários.
@@ -251,6 +364,62 @@ const CURATED_PROP_TEXTURES := {
 	"corpse-fallen-a": "res://assets/props/tower/corpses/fallen_a.png",
 	"corpse-knight-armored": "res://assets/props/tower/corpses/knight_armored.png",
 	"corpse-mossy-poison": "res://assets/props/tower/corpses/mossy_poison.png",
+	# Reformulação completa da Vila (pedido do usuário) — recortes reais dos
+	# PNGs fornecidos em C:\Users\gabri\Downloads\modo aventura 2d\vila,
+	# bbox de alpha real (sem moldura transparente sobrando), copiados pra
+	# assets/props/village2/. Puramente decorativos (blocking:false) exceto
+	# onde a própria _village_definition() os inclui em "obstacles".
+	"village2-well": "res://assets/props/village2/village2_well.png",
+	"village2-boat": "res://assets/props/village2/village2_boat.png",
+	"village2-dock": "res://assets/props/village2/village2_dock.png",
+	"village2-wagon": "res://assets/props/village2/village2_wagon.png",
+	"village2-crate-1": "res://assets/props/village2/village2_crate_1.png",
+	"village2-crate-2": "res://assets/props/village2/village2_crate_2.png",
+	"village2-crate-3": "res://assets/props/village2/village2_crate_3.png",
+	"village2-crate-4": "res://assets/props/village2/village2_crate_4.png",
+	"village2-crate-5": "res://assets/props/village2/village2_crate_5.png",
+	"village2-barrel-1": "res://assets/props/village2/village2_barrel_1.png",
+	"village2-barrel-2": "res://assets/props/village2/village2_barrel_2.png",
+	"village2-barrel-3": "res://assets/props/village2/village2_barrel_3.png",
+	"village2-barrel-4": "res://assets/props/village2/village2_barrel_4.png",
+	"village2-barrel-5": "res://assets/props/village2/village2_barrel_5.png",
+	"village2-sacks": "res://assets/props/village2/village2_sacks.png",
+	"village2-basket": "res://assets/props/village2/village2_basket.png",
+	"village2-jar": "res://assets/props/village2/village2_jar.png",
+	"village2-stool": "res://assets/props/village2/village2_stool.png",
+	"village2-fence-1": "res://assets/props/village2/village2_fence_1.png",
+	"village2-fence-2": "res://assets/props/village2/village2_fence_2.png",
+	"village2-fence-3": "res://assets/props/village2/village2_fence_3.png",
+	"village2-fence-broken": "res://assets/props/village2/village2_fence_broken.png",
+	"village2-wall-ruin": "res://assets/props/village2/village2_wall_ruin.png",
+	"village2-barricade": "res://assets/props/village2/village2_barricade.png",
+	"village2-debris-ash": "res://assets/props/village2/village2_debris_ash.png",
+	"village2-rubble-wall": "res://assets/props/village2/village2_rubble_wall.png",
+	"village2-rubble-rocks": "res://assets/props/village2/village2_rubble_rocks.png",
+	"village2-campfire": "res://assets/props/village2/village2_campfire.png",
+	"village2-stick-pile": "res://assets/props/village2/village2_stick_pile.png",
+	"village2-branch": "res://assets/props/village2/village2_branch.png",
+	"village2-banner": "res://assets/props/village2/village2_banner.png",
+	"village2-lamppost": "res://assets/props/village2/village2_lamppost.png",
+	"village2-planter-1": "res://assets/props/village2/village2_planter_1.png",
+	"village2-planter-2": "res://assets/props/village2/village2_planter_2.png",
+	"village2-tree-green-1": "res://assets/props/village2/village2_tree_green_1.png",
+	"village2-tree-green-2": "res://assets/props/village2/village2_tree_green_2.png",
+	"village2-tree-dead-1": "res://assets/props/village2/village2_tree_dead_1.png",
+	"village2-tree-dead-2": "res://assets/props/village2/village2_tree_dead_2.png",
+	"village2-stump-1": "res://assets/props/village2/village2_stump_1.png",
+	"village2-stump-2": "res://assets/props/village2/village2_stump_2.png",
+	"village2-bush": "res://assets/props/village2/village2_bush.png",
+	"village2-reeds-1": "res://assets/props/village2/village2_reeds_1.png",
+	"village2-reeds-2": "res://assets/props/village2/village2_reeds_2.png",
+	"village2-reeds-3": "res://assets/props/village2/village2_reeds_3.png",
+	"village2-reeds-4": "res://assets/props/village2/village2_reeds_4.png",
+	"village2-reeds-5": "res://assets/props/village2/village2_reeds_5.png",
+	"village2-lilypad-1": "res://assets/props/village2/village2_lilypad_1.png",
+	"village2-lilypad-2": "res://assets/props/village2/village2_lilypad_2.png",
+	"village2-lilypad-3": "res://assets/props/village2/village2_lilypad_3.png",
+	"village2-rock-1": "res://assets/props/village2/village2_rock_1.png",
+	"village2-rock-2": "res://assets/props/village2/village2_rock_2.png",
 }
 
 ## Tamanho máximo (largura ou altura, px) dos props vulcânicos/cadáveres —
@@ -274,12 +443,33 @@ const HAZARD_PROP_MAX_DIM := {
 ## Farm Buildings (Quaternius, CC0), renderizado a partir do .obj numa cena
 ## 3D à parte — esse sim com pás de verdade, ao contrário do substituto
 ## anterior (ver ASSET_SOURCES.md, "Vila", pra histórico da troca).
+## Reformulação completa da Vila (pedido do usuário, ver referencia.png em
+## C:\Users\gabri\Downloads\modo aventura 2d\vila) — recortes reais dos PNGs
+## fornecidos (bbox de alpha real, sem moldura transparente sobrando, ver
+## scratchpad/prepare_village2_assets.py), copiados pra
+## assets/props/village2/. Os arquivos village_house_*/village_mill.png
+## antigos (village/) foram MANTIDOS intactos, só não são mais referenciados
+## por essas 3 constantes — trocar aqui basta pra atualizar casas/moinho/
+## ruína em todo canto que já lia essas constantes, sem tocar no "kind"
+## genérico ("village-house" etc.) de que test_scenario_village.gd depende.
 const VILLAGE_HOUSE_TEXTURES := [
-	"res://assets/props/village/village_house_1.png",
-	"res://assets/props/village/village_house_2.png",
-	"res://assets/props/village/village_house_3.png",
+	"res://assets/props/village2/village2_house_1.png",
+	"res://assets/props/village2/village2_house_2.png",
+	"res://assets/props/village2/village2_house_3.png",
 ]
-const VILLAGE_MILL_TEXTURE := "res://assets/props/village/village_mill.png"
+const VILLAGE_MILL_TEXTURE := "res://assets/props/village2/village2_mill.png"
+## Casa colapsada (kind "village-house-ruin"): reaproveita o recorte da casa
+## 2 com burning=false — a chama é overlay procedural (_draw_village_flame),
+## não faz parte do PNG, então a mesma arte serve pra "intacta pegando
+## fogo" e "já não pega mais fogo" sem precisar de um recorte à parte.
+const VILLAGE_HOUSE_RUIN_TEXTURE := "res://assets/props/village2/village2_house_ruin.png"
+## Celeiro/silo/torre d'água viram "buildings" de verdade (ocupam w/h tiles,
+## bloqueiam movimento via _village_definition) na reformulação — antes eram
+## props curados sem colisão, mas são estruturas sólidas de verdade,
+## incoerente deixar passar por cima delas.
+const VILLAGE_BARN_TEXTURE := "res://assets/props/village2/village2_barn.png"
+const VILLAGE_SILO_TEXTURE := "res://assets/props/village2/village2_silo.png"
+const VILLAGE_WATERTOWER_TEXTURE := "res://assets/props/village2/village2_watertower.png"
 
 func _ready() -> void:
 	# Pixel art esticada (16px -> 64px) precisa de nearest, senão borra os
@@ -334,6 +524,13 @@ func set_state(s: GameState) -> void:
 
 func set_scenario(definition: Dictionary) -> void:
 	scenario_definition = definition
+	# Zoom/arrasto não atravessam troca de cenário — cada mapa começa do
+	# mesmo jeito (60% de zoom, centralizado — pedido do usuário), sem
+	# herdar (nem acumular) o estado visual de navegação do cenário
+	# anterior. Sem efeito na Horda: _update_camera() ignora view_zoom
+	# nesse cenário (janela fixa, ver bloco _is_lua_valley() logo abaixo).
+	view_zoom = 0.6
+	view_pan = Vector2.ZERO
 	_art_profile = ART_DIRECTION.biome_for(String(definition.get("id", "field")))
 	_village_fish_last_turn = -1
 	_village_fish_jump_active = false
@@ -349,7 +546,7 @@ func set_scenario(definition: Dictionary) -> void:
 ## como z_index; o ocupante precisa ficar um plano acima para continuar
 ## legivel. Esta consulta nao altera elevacao, ocupacao ou qualquer regra.
 func structure_occupant_z(x: int, y: int) -> int:
-	if state == null or scenario_definition.get("id", ScenarioManager.FIELD) != ScenarioManager.FIELD:
+	if state == null or not _is_campo_like(scenario_definition.get("id", ScenarioManager.FIELD)):
 		return -1
 	var structure = state.structure_at(x, y)
 	if structure == null or structure.get("destroyed", false):
@@ -370,7 +567,13 @@ func _rebuild_environment_visuals() -> void:
 	for prop in _environment_props:
 		if is_instance_valid(prop): prop.queue_free()
 	_environment_props.clear()
-	if state == null or scenario_definition.get("id", ScenarioManager.FIELD) != ScenarioManager.FIELD: return
+	for node in _scenery_nodes:
+		if is_instance_valid(node): node.queue_free()
+	_scenery_nodes.clear()
+	if scenario_definition.has("scenery_props"):
+		_scenery_nodes = SceneryVisuals.build(self, scenario_definition)
+		return
+	if state == null or not _is_campo_like(scenario_definition.get("id", ScenarioManager.FIELD)): return
 	for y in range(state.board_height):
 		for x in range(state.board_width):
 			var terrain = state.terrain_at(x, y)
@@ -395,10 +598,10 @@ func _rebuild_environment_visuals() -> void:
 		_environment_props.append(visual)
 
 ## Recalcula a posição da câmera pro cenário atual. Chamada de novo a cada
-## troca de cenário (set_scenario). Zoom fica sempre travado em 1:1 (sem
-## aproximar/afastar); só a posição muda, deslocando a janela fixa de 13x13
-## pro canto LUA_VALLEY_CROP_ORIGIN quando o cenário ativo é a Horda. O
-## corte físico pra exatamente 13x13 tiles é feito pelo Control com
+## troca de cenário (set_scenario). Zoom fica travado em 1:1 pra todo mundo
+## exceto CAMPO 2 (ver abaixo); só a posição muda, deslocando a janela fixa
+## de 13x13 pro canto LUA_VALLEY_CROP_ORIGIN quando o cenário ativo é a
+## Horda. O corte físico pra exatamente 13x13 tiles é feito pelo Control com
 ## clip_contents=true que envolve este nó (ver main.gd), não pela câmera.
 ##
 ## Regressão corrigida: `camera` é filho deste próprio nó (board_view), que
@@ -412,18 +615,166 @@ func _rebuild_environment_visuals() -> void:
 ## no centro da viewport (transform líquido zero sobre o corte) — só o
 ## desenho dos tiles se move por baixo do corte fixo, revelando a janela
 ## certa do mapa 26x22 sem arrastar o _board_clip junto.
+##
+func _is_lua_valley() -> bool:
+	return scenario_definition.get("id", ScenarioManager.FIELD) == ScenarioManager.LUA_VALLEY
+
+## Janela de TELA de verdade que o jogador vê do tabuleiro — não a viewport
+## inteira do jogo (que também tem HUD ao redor), e sim o retângulo do
+## Control pai com clip_contents=true (main.gd:_board_clip, tamanho fixo
+## BOARD_DISPLAY_PX, independente de TILE_SIZE). Zoom/arrasto (ver
+## _update_camera/can_pan/_clamp_view_pan) precisam dessa área — não da
+## viewport inteira — pra saber quanto do mapa cabe de verdade na tela.
+func _display_area_size() -> Vector2:
+	var parent := get_parent()
+	if parent is Control:
+		var control_size: Vector2 = (parent as Control).size
+		if control_size.x > 0.0 and control_size.y > 0.0:
+			return control_size
+	var viewport_size: Vector2 = get_viewport_rect().size
+	return viewport_size if viewport_size.x > 0.0 and viewport_size.y > 0.0 else Vector2(832, 832)
+
+## Área do mundo (em px) que a câmera pode de fato mostrar pro cenário atual
+## — só Campo/Torre/Vila (13x13 lógico); Horda usa a janela fixa própria e
+## nunca chama isto.
+func _board_px_size() -> Vector2:
+	if state != null:
+		return Vector2(state.board_width, state.board_height) * TILE_SIZE
+	return Vector2(GameConstants.BOARD_SIZE, GameConstants.BOARD_SIZE) * TILE_SIZE
+
+## Restringe view_pan (deslocamento em px de MUNDO a partir do centro do
+## tabuleiro) pra nunca deixar o tabuleiro sair inteiramente da tela — se a
+## área visível (viewport / zoom) for maior que o tabuleiro num eixo, esse
+## eixo fica travado em 0 (centralizado); senão, limita a metade da sobra
+## de cada lado. Chamada sempre que view_zoom, view_pan ou o tamanho da
+## viewport mudam (_update_camera, zoom, arrastar) — nunca guardamos um
+## view_pan já fora desses limites.
+func _clamp_view_pan(viewport_size: Vector2) -> void:
+	# world_per_pixel = 1/zoom (zoom é magnificação — ver _update_camera):
+	# quanto de MUNDO cabe em cada pixel de tela no zoom atual.
+	var world_per_pixel := 1.0 / clampf(view_zoom, VIEW_ZOOM_MIN, VIEW_ZOOM_MAX)
+	var visible_world := viewport_size * world_per_pixel
+	var board_px := _board_px_size()
+	# BUG corrigido: a fórmula antiga era (visible_world - board_px), que só
+	# dá positivo quando o tabuleiro CABE inteiro (sobra tela) — exatamente
+	# o caso em que NÃO precisa de arrasto. Quando o tabuleiro é MAIOR que a
+	# área visível (o caso de verdade depois do aumento de tile, sempre
+	# verdadeiro agora pro tabuleiro 13x13 a 96px), a conta antiga dava
+	# negativo e forçava view_pan pra 0 sempre — travando a câmera no centro
+	# e tornando bordas/cantos do mapa permanentemente inacessíveis. A conta
+	# certa é o excesso de mundo além da janela (board_px - visible_world):
+	# positivo quando sobra mapa pra explorar, e é ESSA metade que view_pan
+	# pode percorrer pra cada lado do centro.
+	var excess := (board_px - visible_world) * 0.5
+	view_pan.x = 0.0 if excess.x <= 0.0 else clampf(view_pan.x, -excess.x, excess.x)
+	view_pan.y = 0.0 if excess.y <= 0.0 else clampf(view_pan.y, -excess.y, excess.y)
+
+## Achado durante a validação dos 4 cantos do mapa (pedido do usuário): usar
+## Camera2D pra zoom/arrasto quebra o clip_contents de _board_clip (main.gd)
+## assim que a câmera desloca/escala de verdade — Camera2D manipula o
+## canvas_transform da VIEWPORT INTEIRA, e o retângulo de corte do Control
+## "anda junto" com esse transform em vez de ficar fixo na tela, cortando
+## conteúdo que deveria estar visível (metade do mapa sumia ao arrastar pro
+## canto oposto, mesmo com a matemática de câmera perfeitamente correta —
+## confirmado imprimindo canvas_transform e comparando com clip_contents=
+## false, que mostrou o mapa inteiro certo). A correção é não usar Camera2D
+## pra isso: zoom/arrasto (não-Horda) agora escalam/deslocam a TRANSFORM
+## DESTE PRÓPRIO NÓ (position/scale) — o mesmo mecanismo simples que já
+## funcionava antes de existir zoom/arrasto nenhum, imune a esse problema
+## porque nunca mexe no canvas_transform da viewport. A câmera continua
+## existindo só pra Horda (comportamento intocado) e pro tremor de tela
+## (CameraShake2D) quando não-Horda estiver com ela desabilitada — ver nota
+## em CameraShake2D se o tremor precisar de ajuste equivalente no futuro.
 func _update_camera() -> void:
 	if camera == null:
 		return
-	camera.zoom = Vector2.ONE
-	var crop_origin := Vector2.ZERO
-	if scenario_definition.get("id", ScenarioManager.FIELD) == ScenarioManager.LUA_VALLEY:
-		crop_origin = LUA_VALLEY_CROP_ORIGIN * TILE_SIZE
-	position = -crop_origin
-	var viewport_size: Vector2 = get_viewport_rect().size
-	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
-		viewport_size = Vector2(920, 1200)
-	camera.position = viewport_size * 0.5 - global_position
+	var viewport_size: Vector2 = _display_area_size()
+	camera.enabled = false
+	_clamp_view_pan(viewport_size)
+	var zoom_value := clampf(view_zoom, VIEW_ZOOM_MIN, VIEW_ZOOM_MAX)
+	scale = Vector2.ONE * zoom_value
+	var target_center := _board_px_size() * 0.5 + view_pan
+	# Quero "target_center" (espaço local deste nó, ANTES da escala)
+	# aparecendo no centro do retângulo de _board_clip. Um ponto local P
+	# aparece em "position + P*scale" no espaço do PAI (_board_clip); esse
+	# pai tem exatamente viewport_size de largura/altura e este nó fica na
+	# origem dele, então o centro do clip nesse espaço é viewport_size*0.5.
+	position = viewport_size * 0.5 - target_center * zoom_value
+
+## API pública do zoom/arrasto interativo (ver main.gd: botões +/-/100% e
+## arrastar com o mouse). Sempre passam por _update_camera() logo em
+## seguida — nenhum outro lugar do código deve escrever em view_zoom/
+## view_pan/camera.zoom/camera.position diretamente.
+func set_view_zoom(new_zoom: float) -> void:
+	view_zoom = clampf(new_zoom, VIEW_ZOOM_MIN, VIEW_ZOOM_MAX)
+	_update_camera()
+
+func change_view_zoom(steps: int) -> void:
+	set_view_zoom(view_zoom + float(steps) * VIEW_ZOOM_STEP)
+
+func reset_view() -> void:
+	view_zoom = 1.0
+	view_pan = Vector2.ZERO
+	_update_camera()
+
+## `screen_delta` é o deslocamento do MOUSE em pixels de tela desde o último
+## frame de arrasto (ver main.gd:_unhandled_input) — convertido pra pixels de
+## MUNDO via camera.zoom (screen->world escala por esse fator) e subtraído
+## (não somado) de view_pan: arrastar o mouse pra direita precisa mover o
+## CENTRO da câmera pra esquerda pro conteúdo parecer "andar junto" do dedo,
+## em vez de fugir na direção oposta.
+func pan_view_by(screen_delta: Vector2) -> void:
+	# view_zoom é magnificação de tela (ver _update_camera: scale = view_zoom
+	# direto), então a conversão de volta pra pixels de MUNDO divide por
+	# zoom (não multiplica) — a 200%, 1px de mouse deve mover só meio pixel
+	# de mundo; a 50%, deve mover 2px de mundo, pra o conteúdo acompanhar o
+	# dedo na mesma velocidade aparente em qualquer zoom.
+	view_pan -= screen_delta / clampf(view_zoom, VIEW_ZOOM_MIN, VIEW_ZOOM_MAX)
+	_update_camera()
+
+## Alcance de arrasto ainda considerado o CENTRO do tabuleiro, é o suficiente
+## pra viewport atual não deixar sobrar tela vazia num eixo (ver
+## _clamp_view_pan) — main.gd usa isso só pra saber quando iniciar/permitir
+## um arrasto sem checar limites por conta própria.
+func can_pan() -> bool:
+	var viewport_size: Vector2 = _display_area_size()
+	var world_per_pixel := 1.0 / clampf(view_zoom, VIEW_ZOOM_MIN, VIEW_ZOOM_MAX)
+	var visible_world := viewport_size * world_per_pixel
+	var board_px := _board_px_size()
+	return visible_world.x < board_px.x or visible_world.y < board_px.y
+
+## Define view_pan diretamente (ver main.gd: barras de rolagem) — mesma
+## fonte única de verdade que o arrasto/zoom usam, sempre passando por
+## _update_camera() (que por sua vez sempre re-clampa, ver _clamp_view_pan).
+func set_view_pan(new_pan: Vector2) -> void:
+	view_pan = new_pan
+	_update_camera()
+
+## Pedido do usuário: clicar no retrato de um personagem na fila de turnos
+## centraliza a câmera nele (só chamado por main.gd quando view_zoom > 0.6 —
+## no zoom mínimo o tabuleiro inteiro já cabe na tela, então recentralizar
+## não teria efeito). set_view_pan já re-clampa aos limites do tabuleiro.
+func center_on_tile(x: int, y: int) -> void:
+	set_view_pan(tile_center(x, y) - _board_px_size() * 0.5)
+
+## Alcance MÁXIMO (metade, simétrico ao redor do centro) que view_pan pode
+## assumir em cada eixo no zoom atual — 0 num eixo em que o tabuleiro já
+## cabe inteiro. main.gd usa isso pra dimensionar min/max das barras de
+## rolagem (ver _sync_board_scroll).
+func pan_range() -> Vector2:
+	var viewport_size: Vector2 = _display_area_size()
+	var world_per_pixel := 1.0 / clampf(view_zoom, VIEW_ZOOM_MIN, VIEW_ZOOM_MAX)
+	var visible_world := viewport_size * world_per_pixel
+	var board_px := _board_px_size()
+	var excess := (board_px - visible_world) * 0.5
+	return Vector2(maxf(0.0, excess.x), maxf(0.0, excess.y))
+
+## Quanto de MUNDO (em px) a janela atual mostra em cada eixo — usado pra
+## dimensionar a "página" (thumb) das barras de rolagem proporcionalmente.
+func visible_world_size() -> Vector2:
+	var viewport_size: Vector2 = _display_area_size()
+	var world_per_pixel := 1.0 / clampf(view_zoom, VIEW_ZOOM_MIN, VIEW_ZOOM_MAX)
+	return viewport_size * world_per_pixel
 
 ## Interpola suavemente entre calmo e uma pequena rajada (regra 7 da ETAPA
 ## 18 — "vento não deve ter força constante"), num intervalo aleatório.
@@ -498,7 +849,7 @@ func material_at(x: int, y: int) -> String:
 		return "wood"
 	if terrain_type in STONE_TERRAIN_TYPES:
 		return "stone"
-	return "grass" if scenario_definition.get("id", ScenarioManager.FIELD) == ScenarioManager.FIELD else "dirt"
+	return "grass" if _is_campo_like(scenario_definition.get("id", ScenarioManager.FIELD)) else "dirt"
 
 func _draw_grass_reactions() -> void:
 	for reaction in _grass_reactions:
@@ -603,17 +954,20 @@ func _draw() -> void:
 
 	# Grama por baixo de tudo.
 	var grass := _get_tex(GRASS_TEXTURE)
-	for y in range(board_h):
+	# Cenários de props recortados desenham o próprio chão (SceneryVisuals.Ground,
+	# abaixo deste _draw), então aqui não há linhas de grama a pintar.
+	var ground_rows := 0 if scenario_definition.has("scenery_props") else board_h
+	for y in range(ground_rows):
 		for x in range(board_w):
 			draw_texture_rect(grass, tile_rect(x, y), false)
-			if scenario_definition.get("id", ScenarioManager.FIELD) == ScenarioManager.FIELD and posmod(x * 17 + y * 29, 11) == 0:
+			if _is_campo_like(scenario_definition.get("id", ScenarioManager.FIELD)) and posmod(x * 17 + y * 29, 11) == 0:
 				var sway := sin(_anim_time_ms * 0.0012 + float(x * 3 + y)) * 1.5
 				var tuft := tile_center(x, y) + Vector2(-17 + posmod(x * 13 + y * 7, 31), 19)
 				draw_line(tuft, tuft + Vector2(sway - 3, -8), Color(0.25, 0.47, 0.19, 0.42), 1.5, true)
 				draw_line(tuft + Vector2(4, 1), tuft + Vector2(4 - sway, -6), Color(0.42, 0.60, 0.25, 0.34), 1.2, true)
 	# Tint ambiental neutro-esverdeado apenas sobre o chão; unidades, UI e
 	# highlights permanecem com suas cores originais e totalmente legíveis.
-	if scenario_definition.get("id", ScenarioManager.FIELD) == ScenarioManager.FIELD:
+	if _is_campo_like(scenario_definition.get("id", ScenarioManager.FIELD)):
 		draw_rect(Rect2(Vector2.ZERO, Vector2(board_w, board_h) * TILE_SIZE), Color(0.12, 0.22, 0.15, 0.035))
 
 	# Um único curso d'água contínuo, seguindo o mesmo traçado dos tiles de
@@ -634,13 +988,21 @@ func _draw() -> void:
 			var type: String = terrain["type"]
 			if type == "water":
 				continue
-			if type == "tree" and scenario_definition.get("id", ScenarioManager.FIELD) == ScenarioManager.FIELD:
+			if type == "tree" and _is_campo_like(scenario_definition.get("id", ScenarioManager.FIELD)):
 				continue
 			if type == "tree" or type == "tent":
 				tex_path = "res://assets/tiles/%s" % terrain["art"]
 			elif TERRAIN_STATIC_TEXTURES.has(type):
 				tex_path = TERRAIN_STATIC_TEXTURES[type]
 			if tex_path != "":
+				# Sombra de contato só no DESFILADEIRO (pedido do usuário:
+				# aproximar da referência — a folhagem clara de snow_pine.png
+				# quase some sem isso contra a neve pálida de fundo; ESTRADA
+				# INVERNO redesenha a própria árvore depois da neve opaca em
+				# _draw_estrada_inverno_board(), então a sombra dela vive lá).
+				if type == "tree" and scenario_definition.get("id", ScenarioManager.FIELD) == ScenarioManager.DESFILADEIRO:
+					var trect2 := tile_rect(x, y)
+					draw_circle(trect2.position + Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.82), 14.0, Color(0.12, 0.16, 0.22, 0.20))
 				draw_texture_rect(_get_tex(tex_path), tile_rect(x, y), false)
 
 	# Flores pertencem ao Campo; outros cenários têm composição própria.
@@ -666,7 +1028,7 @@ func _draw() -> void:
 			tex_path = CASTLE_RUBBLE_TEXTURE if is_castle else MOUNTAIN_RUBBLE_TEXTURE
 		else:
 			tex_path = CASTLE_TEXTURE if is_castle else MOUNTAIN_TEXTURE
-		if scenario_definition.get("id", ScenarioManager.FIELD) != ScenarioManager.FIELD:
+		if not _is_campo_like(scenario_definition.get("id", ScenarioManager.FIELD)):
 			draw_texture_rect(_get_tex(tex_path), rect, false)
 		if not s["destroyed"]:
 			var hp_ratio: float = float(s["hp"]) / float(s["maxHp"])
@@ -686,8 +1048,16 @@ func _draw() -> void:
 		_draw_village_fish_jump()
 	elif scenario_definition.get("id", ScenarioManager.FIELD) == ScenarioManager.FOREST:
 		_draw_forest_board()
+	elif scenario_definition.get("id", ScenarioManager.FIELD) == ScenarioManager.PORTO:
+		_draw_porto_board()
+	elif scenario_definition.get("id", ScenarioManager.FIELD) == ScenarioManager.DESFILADEIRO:
+		_draw_desfiladeiro_board()
+	elif scenario_definition.get("id", ScenarioManager.FIELD) == ScenarioManager.ESTRADA_INVERNO:
+		_draw_estrada_inverno_board()
 	_draw_curated_props()
 	_draw_grass_reactions()
+	if debug_show_battleable:
+		_draw_battleable_debug()
 	# Grading somente do mundo desenhado por BoardView. Tokens, VFX e UI são
 	# filhos separados e preservam cores de classe/gameplay.
 	draw_rect(Rect2(Vector2.ZERO, Vector2(board_w, board_h) * TILE_SIZE), _art_profile.get("ambient_tint", Color.TRANSPARENT))
@@ -954,11 +1324,19 @@ func _draw_village_building(building: Dictionary, house_index: int) -> void:
 	var tex_path: String = ""
 	if kind == "village-mill":
 		tex_path = VILLAGE_MILL_TEXTURE
+	elif kind == "village-house-ruin":
+		tex_path = VILLAGE_HOUSE_RUIN_TEXTURE
 	elif kind == "village-house":
 		# Cicla pela ordem em que as casas aparecem em "buildings" — garante
 		# variedade previsível (não aleatória) em vez de repetir sempre a
 		# mesma arte nas 4 casas.
 		tex_path = VILLAGE_HOUSE_TEXTURES[house_index % VILLAGE_HOUSE_TEXTURES.size()]
+	elif kind == "village-barn":
+		tex_path = VILLAGE_BARN_TEXTURE
+	elif kind == "village-silo":
+		tex_path = VILLAGE_SILO_TEXTURE
+	elif kind == "village-watertower":
+		tex_path = VILLAGE_WATERTOWER_TEXTURE
 	var destination := rect
 	if tex_path != "":
 		var tex := _get_tex(tex_path)
@@ -985,6 +1363,402 @@ func _draw_village_flame(base: Vector2, seed: int) -> void:
 	draw_colored_polygon(PackedVector2Array([base+Vector2(-13,5),base+Vector2(-8,-13),tip,base+Vector2(11,-10),base+Vector2(14,5)]),Color(1.0,0.24,0.04,0.88))
 	draw_colored_polygon(PackedVector2Array([base+Vector2(-6,4),base+Vector2(-3,-9),tip+Vector2(2,10),base+Vector2(7,4)]),Color(1.0,0.78,0.12,0.94))
 	draw_circle(base+Vector2(0,-34),10+pulse*2,Color(0.13,0.10,0.10,0.18))
+
+## Base real do Kenney Fantasy Town (CC0, `fountainRoundDetail.glb` — ver
+## ASSET_SOURCES.md "PORTO"); o brilho central é procedural (_draw_porto_
+## fountain), não faz parte do PNG.
+const PORTO_FOUNTAIN_TEXTURE := "res://assets/props/porto/pixel/porto_fountain.png"
+const PORTO_HOUSE_TEXTURE := "res://assets/props/porto/pixel/porto_house.png"
+const PORTO_COBBLESTONE_TEXTURE := "res://assets/props/porto/pixel/porto_cobblestone.png"
+const PORTO_REEDS_TEXTURES := [
+	"res://assets/props/porto/pixel/porto_reeds_1.png",
+	"res://assets/props/porto/pixel/porto_reeds_2.png",
+]
+
+## PORTO (cenário independente — ScenarioManager._porto_definition()/
+## GameState._setup_porto). Praça de pedregulhos e água reais (recortes da
+## própria imagem de referência do usuário, ver ASSET_SOURCES.md), casa
+## desenhada por `_draw_porto_house()` (kind próprio "porto-house", não usa
+## mais _draw_village_building/village-house).
+func _draw_porto_board() -> void:
+	_draw_porto_water()
+	var cobblestone := _get_tex(PORTO_COBBLESTONE_TEXTURE)
+	for tile in scenario_definition.get("road", []):
+		draw_texture_rect(cobblestone, tile_rect(tile["x"], tile["y"]), false)
+	# Junco raso de transição grama→água nas margens conhecidas do cenário —
+	# recorte real (porto_reeds_1/2.png) no lugar do tufo senoidal
+	# procedural, pedido do usuário pra evitar corte reto entre grama e água.
+	var shore_tufts := [
+		{"x":2,"y":10},{"x":3,"y":10},{"x":9,"y":10},{"x":10,"y":10},
+		{"x":1,"y":7},{"x":1,"y":8},{"x":1,"y":9},{"x":2,"y":0},
+	]
+	var reeds_textures: Array[Texture2D] = [_get_tex(PORTO_REEDS_TEXTURES[0]), _get_tex(PORTO_REEDS_TEXTURES[1])]
+	for i in shore_tufts.size():
+		var tuft: Dictionary = shore_tufts[i]
+		var reeds_tex := reeds_textures[i % 2]
+		var size: Vector2 = reeds_tex.get_size()
+		var max_dim := 44.0
+		var draw_size: Vector2 = size * (max_dim / maxf(size.x, size.y))
+		var center := tile_center(tuft["x"], tuft["y"]) + Vector2(0, 14)
+		draw_texture_rect(reeds_tex, Rect2(center - draw_size * Vector2(0.5, 1.0), draw_size), false)
+	for building in scenario_definition.get("buildings", []):
+		_draw_porto_house(building)
+	var fountain: Dictionary = scenario_definition.get("fountain", {})
+	if not fountain.is_empty():
+		_draw_porto_fountain(fountain)
+
+## Casa grande do PORTO (landmark #1) — recorte real da referência do
+## usuário (PORTO_HOUSE_TEXTURE), encaixado no retângulo via _contain_rect
+## (mesma técnica da fonte abaixo). Kind próprio "porto-house": não passa
+## por _draw_village_building/village-house, que continuam intactos pra
+## Vila e demais cenários.
+func _draw_porto_house(building: Dictionary) -> void:
+	var rect := Rect2(Vector2(building["x"], building["y"]) * TILE_SIZE, Vector2(building["w"], building["h"]) * TILE_SIZE)
+	draw_ellipse_shadow(rect.position + Vector2(rect.size.x * 0.5, rect.size.y * 0.94), Vector2(rect.size.x * 0.42, 14), Color(0.03,0.02,0.02,0.35))
+	var tex := _get_tex(PORTO_HOUSE_TEXTURE)
+	draw_texture_rect(tex, _contain_rect(rect.grow(6), tex.get_size()), false)
+
+## Água do PORTO: costa irregular própria (não é rio/lago contínuo como
+## Campo/Vale de Lua/Vila — ver ScenarioManager._porto_definition() pro
+## formato da borda) — textura real (recorte da referência do usuário) por
+## célula + o mesmo brilho de correnteza animado de antes.
+## Água do PORTO (pedido do usuário: precisa ficar "unida" — um corpo só,
+## igual o rio do Campo — em vez de blocos separados). A textura real por
+## célula (recorte da referência) criava costura visível de tile em tile;
+## em vez disso, gradiente contínuo (varia suave de célula pra célula via
+## seno, sem repetição de padrão) + uma margem/costa (mesma linguagem de
+## `bank_color` de _draw_river_bands) traçada em CADA aresta onde água
+## encosta em terra firme — cobre qualquer formato de costa (recorte do
+## píer, bolsão isolado do canto) sem precisar forçar um polyline fino por
+## cima de uma área larga como a do Campo/Vale de Lua.
+func _draw_porto_water() -> void:
+	var water_tiles: Array = scenario_definition.get("water", [])
+	var water_set := {}
+	for tile in water_tiles:
+		water_set[Vector2i(int(tile["x"]), int(tile["y"]))] = true
+	for tile in water_tiles:
+		var rect := tile_rect(tile["x"], tile["y"])
+		var depth: float = 0.5 + 0.5 * sin(float(tile["x"]) * 0.7 + float(tile["y"]) * 0.5)
+		draw_rect(rect, Color(0.10, 0.24, 0.34).lerp(Color(0.16, 0.36, 0.46), depth))
+		var shimmer: float = 0.5 + 0.5 * sin(_soul_phase * 1.4 + float(tile["x"]) * 0.9 + float(tile["y"]) * 0.6)
+		draw_line(rect.position + Vector2(6, 18 + shimmer*6), rect.position + Vector2(TILE_SIZE-10, 14 + shimmer*6), Color(1,1,1,0.10+shimmer*0.08), 2.0, true)
+	var bank_color := Color("2f4a55")
+	var board_w := state.board_width
+	var board_h := state.board_height
+	for tile in water_tiles:
+		var x: int = int(tile["x"])
+		var y: int = int(tile["y"])
+		var rect := tile_rect(x, y)
+		if y > 0 and not water_set.has(Vector2i(x, y - 1)):
+			draw_line(rect.position, rect.position + Vector2(TILE_SIZE, 0), bank_color, 5.0)
+		if y < board_h - 1 and not water_set.has(Vector2i(x, y + 1)):
+			draw_line(rect.position + Vector2(0, TILE_SIZE), rect.position + Vector2(TILE_SIZE, TILE_SIZE), bank_color, 5.0)
+		if x > 0 and not water_set.has(Vector2i(x - 1, y)):
+			draw_line(rect.position, rect.position + Vector2(0, TILE_SIZE), bank_color, 5.0)
+		if x < board_w - 1 and not water_set.has(Vector2i(x + 1, y)):
+			draw_line(rect.position + Vector2(TILE_SIZE, 0), rect.position + Vector2(TILE_SIZE, TILE_SIZE), bank_color, 5.0)
+
+## Fonte/monumento (landmark #2 do PORTO): base real (PORTO_FOUNTAIN_
+## TEXTURE) encaixada no retângulo 2x2 via _contain_rect (mesma técnica das
+## casas), com um brilho mágico pulsante por cima — procedural, ecoa o
+## obelisco luminoso da imagem de referência do usuário sem copiar o desenho.
+func _draw_porto_fountain(fountain: Dictionary) -> void:
+	var rect := Rect2(Vector2(fountain["x"], fountain["y"]) * TILE_SIZE, Vector2(fountain["w"], fountain["h"]) * TILE_SIZE).grow(-4)
+	draw_ellipse_shadow(rect.get_center() + Vector2(0, rect.size.y * 0.36), Vector2(rect.size.x * 0.4, 14), Color(0.03,0.02,0.02,0.4))
+	var tex := _get_tex(PORTO_FOUNTAIN_TEXTURE)
+	var destination := _contain_rect(rect, tex.get_size())
+	draw_texture_rect(tex, destination, false)
+	var center := destination.position + destination.size * Vector2(0.5, 0.38)
+	var pulse: float = 0.6 + 0.4 * sin(_soul_phase * 2.2)
+	draw_circle(center, 9.0 + pulse * 3.0, Color(0.55, 0.85, 1.0, 0.20 + pulse * 0.12))
+	draw_circle(center, 4.0 + pulse * 1.5, Color(0.75, 0.95, 1.0, 0.55 + pulse * 0.2))
+
+## Overlay de QA temporário (ver `debug_show_battleable`): verde translúcido
+## em tile battleable+livre de ocupante, vermelho no resto. Desenhado por
+## último (por cima de terreno/props), não lê nem escreve nenhum highlight
+## de jogo (highlight_move/attack/spell) — puramente informativo.
+## Terceira cor (azul, "só voo") pedida especificamente pro DESFILADEIRO —
+## qualquer tile "desfiladeiro-chasm" (ver GameState.compute_reachable/
+## _can_unit_anchor_at) é sempre "só voo", nunca aparece verde/vermelho puro.
+func _draw_battleable_debug() -> void:
+	if state == null: return
+	for y in range(state.board_height):
+		for x in range(state.board_width):
+			var terrain = state.terrain_at(x, y)
+			var flight_only: bool = terrain != null and terrain.get("type", "") == "desfiladeiro-chasm"
+			var free_ok: bool = state.is_battleable(x, y) and state.occupant_at(x, y) == null
+			var color: Color
+			if flight_only:
+				color = Color(0.20, 0.55, 0.95, 0.34)
+			elif free_ok:
+				color = Color(0.15, 0.85, 0.25, 0.32)
+			else:
+				color = Color(0.9, 0.15, 0.15, 0.32)
+			draw_rect(tile_rect(x, y), color)
+
+const DESFILADEIRO_SNOW_TEXTURE := "res://assets/props/desfiladeiro/desfiladeiro_snow_ground.png"
+const DESFILADEIRO_FOOTPRINTS_TEXTURE := "res://assets/props/desfiladeiro/desfiladeiro_snow_footprints.png"
+const DESFILADEIRO_BRIDGE_TEXTURE := "res://assets/props/desfiladeiro/desfiladeiro_bridge.png"
+const DESFILADEIRO_MOUNTAINS_TEXTURE := "res://assets/props/desfiladeiro/desfiladeiro_mountains_bg.png"
+## Pedido do usuário: a borda do penhasco repetindo a MESMA imagem (com capim
+## nevado no topo) célula a célula lia como um carimbo repetido, não uma
+## parede contínua. Mesma técnica do paredão da ESTRADA INVERNO (ver
+## _draw_estrada_inverno_cliff_tile): a arte "cheia" (com capim) só na
+## primeira linha visível da coluna, um recorte "_body" (só a rocha, sem
+## capim) repetindo por baixo — sem a faixa branca se repetindo a cada
+## célula, a coluna lê como uma única face de rocha contínua.
+const DESFILADEIRO_CLIFF_WALL_TEXTURES := [
+	"res://assets/props/desfiladeiro/desfiladeiro_cliff_wall_1.png",
+	"res://assets/props/desfiladeiro/desfiladeiro_cliff_wall_2.png",
+]
+const DESFILADEIRO_CLIFF_WALL_BODY_TEXTURES := [
+	"res://assets/props/desfiladeiro/desfiladeiro_cliff_wall_1_body.png",
+	"res://assets/props/desfiladeiro/desfiladeiro_cliff_wall_2_body.png",
+]
+## Altura do "céu" (ScenarioManager._desfiladeiro_definition():sky) em linhas
+## de tile — mantido como constante em vez de reler `sky` a cada frame só pra
+## descobrir a altura do retângulo do fundo de montanhas.
+const DESFILADEIRO_SKY_ROWS := 3
+## Pegadas na neve levando até as duas bocas da ponte (x=3/x=8, y=5) —
+## puramente visual (pedido do usuário, ecoa a trilha de pegadas da imagem de
+## referência), não altera blocked_tiles nem custo de movimento. Só a linha
+## y=5 agora (regra 10: y=6 deixou de ser ponte andável, virou ravina — ver
+## ScenarioManager._desfiladeiro_definition()), senão as pegadas levariam a
+## uma borda de ravina em vez da ponte de fato.
+const DESFILADEIRO_FOOTPRINT_TILES := [
+	{"x":3,"y":5},{"x":8,"y":5},
+]
+
+## DESFILADEIRO (cenário independente — ScenarioManager._desfiladeiro_
+## definition()/GameState._setup_desfiladeiro). Fundo de céu+montanhas nas 3
+## primeiras linhas (pedido do usuário: essas linhas não fazem parte do
+## tabuleiro pisável, só cenário ao fundo — ver `sky` em ScenarioManager),
+## neve real cobrindo o restante, ponte de pedra real esticada pro retângulo
+## 4x2 — árvores/pedras/monólitos não precisam de código aqui: árvores usam
+## o mecanismo genérico de "tree"+art já desenhado pelo loop de terreno
+## estático em _draw(), e pedra/monólito/cristal/arbusto são props curados
+## (_draw_curated_props(), chamada logo depois desta função no _draw()
+## principal).
+func _draw_desfiladeiro_board() -> void:
+	var board_w := state.board_width
+	var board_h := state.board_height
+	_draw_desfiladeiro_sky()
+	var snow_tex := _get_tex(DESFILADEIRO_SNOW_TEXTURE)
+	var footprints_tex := _get_tex(DESFILADEIRO_FOOTPRINTS_TEXTURE)
+	var sky_tiles: Array = scenario_definition.get("sky", [])
+	for y in range(board_h):
+		for x in range(board_w):
+			if y < DESFILADEIRO_SKY_ROWS:
+				var in_sky := false
+				for tile in sky_tiles:
+					if int(tile["x"]) == x and int(tile["y"]) == y:
+						in_sky = true
+						break
+				if in_sky: continue
+			var rect := tile_rect(x, y)
+			var is_footprint_tile := false
+			for tile in DESFILADEIRO_FOOTPRINT_TILES:
+				if int(tile["x"]) == x and int(tile["y"]) == y:
+					is_footprint_tile = true
+					break
+			draw_texture_rect(footprints_tex if is_footprint_tile else snow_tex, rect, false)
+	# Rio + muros desenhados ANTES da ponte de propósito: o PNG real da ponte
+	# (recorte da referência) tem o vão do arco TRANSPARENTE (ver
+	# ASSET_SOURCES.md) — desenhar a ponte por cima deixa o rio aparecer
+	# através do arco, exatamente como uma ponte de verdade cruzando um rio
+	# (pedido do usuário: nada de neve "vazando" por baixo da ponte).
+	_draw_desfiladeiro_chasm()
+	var bridge_tiles: Array = scenario_definition.get("bridge", [])
+	if not bridge_tiles.is_empty():
+		var min_x := 99
+		var min_y := 99
+		var max_x := -1
+		var max_y := -1
+		for tile in bridge_tiles:
+			min_x = mini(min_x, int(tile["x"]))
+			min_y = mini(min_y, int(tile["y"]))
+			max_x = maxi(max_x, int(tile["x"]))
+			max_y = maxi(max_y, int(tile["y"]))
+		var bridge_rect := Rect2(Vector2(min_x, min_y) * TILE_SIZE, Vector2(max_x - min_x + 1, max_y - min_y + 1) * TILE_SIZE)
+		draw_texture_rect(_get_tex(DESFILADEIRO_BRIDGE_TEXTURE), bridge_rect, false)
+
+## Fundo de céu do DESFILADEIRO (pedido do usuário): as 3 primeiras linhas
+## (`sky`, gerado por ScenarioManager._desfiladeiro_definition()) não são
+## tabuleiro pisável, só cenário — gradiente de céu + montanhas reais
+## (recorte da referência do usuário) cobrindo a largura inteira, inclusive
+## por trás do vão da ravina (x=4..7): a boca do desfiladeiro segue sendo
+## desenhada por cima disso por _draw_desfiladeiro_chasm(), como se a
+## ravina cortasse a cordilheira.
+func _draw_desfiladeiro_sky() -> void:
+	var board_w := state.board_width
+	var band_rect := Rect2(Vector2.ZERO, Vector2(board_w * TILE_SIZE, DESFILADEIRO_SKY_ROWS * TILE_SIZE))
+	draw_rect(band_rect, Color("bcdcec"))
+	var mountains := _get_tex(DESFILADEIRO_MOUNTAINS_TEXTURE)
+	draw_texture_rect(mountains, band_rect, false)
+
+## Ravina do DESFILADEIRO (pedido do usuário): as 2 colunas externas (x=4/
+## x=7) são um bloco vertical único por coluna — a MESMA arte real de
+## paredão rochoso nevado (recorte da referência) repetida sem interrupção
+## por toda a altura da ravina (y=3..12), inclusive por trás da ponte (ela
+## cobre por cima depois, ver _draw_desfiladeiro_board). As 2 colunas
+## internas (x=5/x=6) são um rio de verdade — reaproveita _draw_river_bands
+## (mesma técnica do Campo/Vale de Lua/Estrada Inverno), só mais largo (2
+## células) e com tom de água fria em vez do verde do Campo. Desenhado ANTES
+## dos muros de propósito: garante que a margem do rio nunca vaza por cima
+## da arte da parede. Puramente visual — blocked_tiles continua vindo só de
+## "chasm" em ScenarioManager, as 4 colunas seguem igualmente intransitáveis
+## (inclusive pra voadoras nas 2 externas).
+func _draw_desfiladeiro_chasm() -> void:
+	var river_points := PackedVector2Array([Vector2(5.5, 3.0), Vector2(5.5, 13.0)])
+	for i in range(river_points.size()): river_points[i] *= TILE_SIZE
+	_draw_river_bands(river_points, Color("2d3038"), 1.9)
+	_draw_desfiladeiro_waterfall_crest()
+	var wall_caps: Array[Texture2D] = [_get_tex(DESFILADEIRO_CLIFF_WALL_TEXTURES[0]), _get_tex(DESFILADEIRO_CLIFF_WALL_TEXTURES[1])]
+	var wall_bodies: Array[Texture2D] = [_get_tex(DESFILADEIRO_CLIFF_WALL_BODY_TEXTURES[0]), _get_tex(DESFILADEIRO_CLIFF_WALL_BODY_TEXTURES[1])]
+	for y in range(3, 13):
+		var is_top_row := y == 3
+		draw_texture_rect(wall_caps[0] if is_top_row else wall_bodies[0], tile_rect(4, y), false)
+		draw_texture_rect(wall_caps[1] if is_top_row else wall_bodies[1], tile_rect(7, y), false)
+
+## Queda d'água (pedido do usuário): sem isso, o topo do rio era uma linha
+## reta exatamente na fronteira y=3/y=4 (onde a montanha de fundo termina e a
+## ravina começa) — espuma branca irregular + 2 pedrinhas (mesmos recortos
+## `desfiladeiro-rock-*` já usados como obstáculo alhures, aqui só
+## decorativos, sem entrar em blocked_tiles) quebram essa linha, sugerindo
+## uma pequena cachoeira despencando pra dentro da ravina.
+func _draw_desfiladeiro_waterfall_crest() -> void:
+	var crest_y: float = 3.55 * TILE_SIZE
+	for fx in [5.15, 5.55, 5.95, 6.35]:
+		var center := Vector2(fx * TILE_SIZE, crest_y + sin(fx * 11.0) * 6.0)
+		var foam: float = 0.5 + 0.5 * sin(_soul_phase * 2.1 + fx * 4.0)
+		draw_circle(center, 7.0 + foam * 3.0, Color(0.90, 0.96, 0.98, 0.55 + foam * 0.25))
+	var rock_1 := _get_tex("res://assets/props/desfiladeiro/desfiladeiro_rock_4.png")
+	var rock_2 := _get_tex("res://assets/props/desfiladeiro/desfiladeiro_rock_2.png")
+	_draw_scaled_prop(rock_1, Vector2(5.25, 3.75) * TILE_SIZE, 30.0)
+	_draw_scaled_prop(rock_2, Vector2(6.35, 3.35) * TILE_SIZE, 26.0)
+
+## Desenha `tex` centrada em `center`, redimensionada pra caber num quadrado
+## de lado `max_dim` — mesma fórmula de _draw_curated_props(), só reaproveita
+## fora do mecanismo de "decorations" pra acentos fixos como a cachoeira acima.
+func _draw_scaled_prop(tex: Texture2D, center: Vector2, max_dim: float) -> void:
+	var tex_size: Vector2 = tex.get_size()
+	var size: Vector2 = tex_size * (max_dim / maxf(tex_size.x, tex_size.y))
+	draw_texture_rect(tex, Rect2(center - size * 0.5, size), false)
+
+## O morro da ESTRADA INVERNO foi removido. Estas constantes/função ficam
+## inertes para preservar compatibilidade com cenas ou ferramentas antigas que
+## ainda possam referenciá-las.
+const ESTRADA_INVERNO_CLIFF_CAP_GID := 1926
+const ESTRADA_INVERNO_CLIFF_BODY_GIDS := [1966, 2006, 2046]
+
+func _draw_estrada_inverno_cliff_tile(x: int, y: int) -> void:
+	# Os dois trechos verticais da parede (regra "stairs" em
+	# ScenarioManager._estrada_inverno_definition(): y em [9,10] é o vão da
+	# escada) começam de novo em y=0 e em y=11 — cada um mostra a borda com
+	# capim (cap) só na própria linha do topo.
+	var row_in_run := y if y <= 8 else y - 11
+	var gid: int
+	if row_in_run == 0:
+		gid = ESTRADA_INVERNO_CLIFF_CAP_GID
+	else:
+		gid = ESTRADA_INVERNO_CLIFF_BODY_GIDS[(row_in_run - 1) % ESTRADA_INVERNO_CLIFF_BODY_GIDS.size()]
+	var atlas := _get_tex(LuaValleyLayout.ATLAS_PATH)
+	var src: Rect2i = LuaValleyLayout.atlas_rect(gid)
+	draw_texture_rect_region(atlas, tile_rect(x, y), Rect2(src.position, src.size))
+
+## Cordilheira de fundo da ESTRADA INVERNO (pedido do usuário: "a mesma
+## montanha que tem no cenário da Horda" — na prática, a mesma imagem de
+## montanhas nevadas já usada no fundo de céu do DESFILADEIRO, ver
+## DESFILADEIRO_MOUNTAINS_TEXTURE). Ao contrário do Desfiladeiro, aqui as 3
+## primeiras linhas são água de verdade (jogável, mesmo type "water" do
+## Campo — não dá pra virar céu sem quebrar a regra 7/8 do pedido original),
+## então a montanha fica FORA do tabuleiro, numa faixa acima da linha y=0 —
+## a câmera padrão sobra margem suficiente ao redor do tabuleiro 13x13 pra
+## essa faixa aparecer, sem tirar nem um tile jogável do cenário.
+## Enriquecimento de decoração (pedido do usuário): recorte real da
+## referência (estrada inverno/neve1.png) substituindo a neve procedural que
+## existia aqui antes — mesmo papel de DESFILADEIRO_SNOW_TEXTURE. O arquivo já
+## estava importado em assets/tiles/ (mesma pasta usada pelas árvores da
+## própria Estrada Inverno, ver correção acima) de uma tentativa anterior que
+## nunca chegou a ligar o código de desenho a ele.
+const ESTRADA_INVERNO_SNOW_TEXTURE := "res://assets/tiles/estrada_inverno_neve1.png"
+
+func _draw_estrada_inverno_mountains_bg(board_w: int) -> void:
+	var band_height := TILE_SIZE * 2.4
+	var band_rect := Rect2(Vector2(0, -band_height), Vector2(board_w * TILE_SIZE, band_height))
+	draw_rect(band_rect, Color("bcdcec"))
+	draw_texture_rect(_get_tex(DESFILADEIRO_MOUNTAINS_TEXTURE), band_rect, false)
+
+## ESTRADA INVERNO (cenário independente — ScenarioManager._estrada_inverno_
+## definition()/GameState._setup_estrada_inverno). Neve procedural cobrindo o
+## tabuleiro inteiro (opaca — ver comentário abaixo sobre por que não pode
+## ser translúcida aqui), trilha de terra clara e escada de madeira real
+## (LuaValleyLayout.LADDER_PATH, mesmo asset da Horda). O rio reaproveita a
+## MESMA _draw_river_bands() já usada pelo Campo/Vale de Lua, só com pontos
+## próprios.
+func _draw_estrada_inverno_board() -> void:
+	var board_w := state.board_width
+	var board_h := state.board_height
+	# Neve contínua: uma única superfície cobre o tabuleiro inteiro. Desenhar o
+	# recorte uma vez evita a borda marrom que aparecia em cada quadrado quando
+	# a textura era repetida tile a tile.
+	var snow_tex := _get_tex(ESTRADA_INVERNO_SNOW_TEXTURE)
+	var board_rect := Rect2(Vector2.ZERO, Vector2(board_w, board_h) * TILE_SIZE)
+	draw_rect(board_rect, Color("dce8ef"))
+	# Usa apenas o miolo do recorte (sem a moldura de terra/grama), esticado
+	# como uma camada única para não criar emendas entre quadrados.
+	draw_texture_rect_region(snow_tex, board_rect, Rect2(30, 30, 213, 207))
+	for y in range(board_h):
+		for x in range(board_w):
+			var terrain = state.terrain_at(x, y)
+			if terrain == null: continue
+			var terrain_type := String(terrain.get("type", ""))
+			if terrain_type == "tree":
+				var trect := tile_rect(x, y)
+				draw_circle(trect.position + Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.82), 14.0, Color(0.12, 0.16, 0.22, 0.24))
+				draw_texture_rect(_get_tex("res://assets/tiles/%s" % terrain["art"]), trect, false)
+	# Margem de neve/gelo em vez da grama padrão de _draw_river_bands (pedido
+	# do usuário: aproximar da referência, onde a água encontra neve direto,
+	# sem faixa verde).
+	_draw_river_bands(_estrada_inverno_river_points(), Color("d8e4ea"))
+	var trail_tiles: Array = scenario_definition.get("trail", [])
+	if trail_tiles.size() > 1:
+		var trail_path := PackedVector2Array()
+		for tile in trail_tiles:
+			trail_path.append(tile_center(int(tile["x"]), int(tile["y"])))
+		draw_polyline(trail_path, Color("b99c6d"), TILE_SIZE * 0.58, true)
+		draw_polyline(trail_path, Color("d0b582"), TILE_SIZE * 0.42, true)
+	for tile in trail_tiles:
+		var rect := tile_rect(tile["x"], tile["y"])
+		draw_rect(rect, Color("c9ad78"))
+		var speck := rect.position + Vector2(12 + posmod(tile["x"]*13 + tile["y"]*7, 40), 12 + posmod(tile["x"]*19 + tile["y"]*11, 40))
+		draw_circle(speck, 3.0, Color(0.55, 0.44, 0.26, 0.30))
+
+## Curva do rio da ESTRADA INVERNO — mesma técnica do rio do Campo
+## (`_river_curve_points`/`_append_river_curve`), pontos próprios cobrindo a
+## borda superior (linhas 0-2) em vez da coluna central do Campo.
+func _estrada_inverno_river_points() -> PackedVector2Array:
+	var result := PackedVector2Array()
+	var start := Vector2(-0.3, 1.0)
+	result = _append_river_curve(result, start, Vector2(2.0, 0.6), Vector2(4.0, 1.6), Vector2(6.0, 0.9))
+	start = Vector2(6.0, 0.9)
+	result = _append_river_curve(result, start, Vector2(7.4, 0.4), Vector2(8.3, 1.1), Vector2(9.3, -0.3), true)
+	for i in range(result.size()): result[i] *= TILE_SIZE
+	return result
+
+## Escada única de acesso ao platô — mesmo asset real da Horda
+## (LuaValleyLayout.LADDER_PATH, ladder_long.png, CC0), esticado pra cobrir
+## as N células de "stairs" (mesma técnica de _draw_lua_ladder, só que pros
+## tiles próprios da ESTRADA INVERNO em vez do array hardcoded do Vale de
+## Lua).
+func _draw_estrada_inverno_stairs() -> void:
+	var tiles: Array = scenario_definition.get("stairs", [])
+	if tiles.is_empty(): return
+	var ladder := _get_tex(LuaValleyLayout.LADDER_PATH)
+	var top: Dictionary = tiles[0]
+	var destination := Rect2(Vector2(int(top["x"]), int(top["y"])) * TILE_SIZE, Vector2(TILE_SIZE, TILE_SIZE * tiles.size()))
+	draw_rect(Rect2(destination.position + Vector2(23, 3), Vector2(18, destination.size.y - 6)), Color(0.03, 0.025, 0.02, 0.22))
+	draw_texture_rect(ladder, destination, false)
 
 ## Curva visual do rio da Vila — acompanha as células reais de "water" em
 ## _village_definition() (colunas 11-12, linha 0 até a 12), com uma leve
@@ -1036,25 +1810,153 @@ const VILLAGE_PROP_MAX_DIM := {
 	"village-tree3": 100.0,
 	"village-tree4": 100.0,
 	"village-tree5": 100.0,
+	"village-fence-broken": 92.0,
+	"village-barricade": 90.0,
+	"village-bridge-broken": 110.0,
+}
+
+## Mesmo papel de VILLAGE_PROP_MAX_DIM, pros props "village2-*" da
+## reformulação completa (pedido do usuário) — valores já pensados pro
+## TILE_SIZE atual (96px), não os 64px de quando VILLAGE_PROP_MAX_DIM foi
+## calibrado.
+const VILLAGE2_PROP_MAX_DIM := {
+	"village2-well": 110.0, "village2-boat": 110.0, "village2-dock": 150.0,
+	"village2-wagon": 150.0,
+	"village2-crate-1": 70.0, "village2-crate-2": 70.0, "village2-crate-3": 70.0,
+	"village2-crate-4": 70.0, "village2-crate-5": 70.0,
+	"village2-barrel-1": 70.0, "village2-barrel-2": 75.0, "village2-barrel-3": 75.0,
+	"village2-barrel-4": 80.0, "village2-barrel-5": 75.0,
+	"village2-sacks": 90.0, "village2-basket": 70.0, "village2-jar": 75.0, "village2-stool": 60.0,
+	"village2-fence-1": 130.0, "village2-fence-2": 130.0, "village2-fence-3": 130.0,
+	"village2-fence-broken": 130.0, "village2-wall-ruin": 150.0, "village2-barricade": 135.0,
+	"village2-debris-ash": 130.0, "village2-rubble-wall": 150.0, "village2-rubble-rocks": 120.0,
+	"village2-campfire": 130.0, "village2-stick-pile": 120.0, "village2-branch": 70.0,
+	"village2-banner": 130.0, "village2-lamppost": 160.0,
+	"village2-planter-1": 80.0, "village2-planter-2": 80.0,
+	"village2-tree-green-1": 140.0, "village2-tree-green-2": 140.0,
+	"village2-tree-dead-1": 140.0, "village2-tree-dead-2": 140.0,
+	"village2-stump-1": 90.0, "village2-stump-2": 90.0, "village2-bush": 70.0,
+	"village2-reeds-1": 90.0, "village2-reeds-2": 90.0, "village2-reeds-3": 90.0,
+	"village2-reeds-4": 90.0, "village2-reeds-5": 90.0,
+	"village2-lilypad-1": 70.0, "village2-lilypad-2": 70.0, "village2-lilypad-3": 70.0,
+	"village2-rock-1": 80.0, "village2-rock-2": 80.0,
+}
+
+## Mesmo papel de VILLAGE_PROP_MAX_DIM, só que pros props "porto-*"
+## (recortes reais da referência do usuário, ver CURATED_PROP_TEXTURES).
+const PORTO_PROP_MAX_DIM := {
+	"porto-cart": 100.0,
+	"porto-fence": 92.0,
+	"porto-barrel": 52.0,
+	"porto-barrel-stack": 60.0,
+	"porto-crate": 52.0,
+	"porto-mossy-rock": 56.0,
+	"porto-boat": 96.0,
+	"porto-market-stall": 110.0,
+	"porto-awning": 110.0,
+	"porto-lantern-post": 84.0,
+	"porto-lilypad": 40.0,
+	# Pedido do usuário: enriquecimento de decoração (ver obstacles em
+	# ScenarioManager._porto_definition()). "porto-house-2" maior que os
+	# demais props curados de propósito — precisa ler como uma construção;
+	# seu span 2x2 é aplicado diretamente em _draw_curated_props().
+	"porto-house-2": 150.0,
+	"porto-tree": 110.0,
+	"porto-lamp": 84.0,
+	"porto-crate-2": 54.0,
+	"porto-sacks": 62.0,
+}
+
+## Mesmo papel de VILLAGE_PROP_MAX_DIM/PORTO_PROP_MAX_DIM, pros props
+## "desfiladeiro-*" (pedras, lápides/monólitos, cristal e arbustos secos).
+const DESFILADEIRO_PROP_MAX_DIM := {
+	"desfiladeiro-rock-1": 92.0,
+	"desfiladeiro-rock-2": 92.0,
+	"desfiladeiro-rock-3": 68.0,
+	"desfiladeiro-rock-4": 52.0,
+	"desfiladeiro-monolith-1": 76.0,
+	"desfiladeiro-monolith-2": 76.0,
+	"desfiladeiro-monolith-3": 76.0,
+	"desfiladeiro-monolith-4": 76.0,
+	"desfiladeiro-crystal": 84.0,
+	"desfiladeiro-bush-1": 60.0,
+	"desfiladeiro-bush-2": 60.0,
+	"desfiladeiro-bush-3": 70.0,
+}
+
+## Mesmo papel de DESFILADEIRO_PROP_MAX_DIM, pros props "estrada-inverno-*"
+## (poço, pedras, barris e a caveira na neve).
+const ESTRADA_INVERNO_PROP_MAX_DIM := {
+	"estrada-inverno-well": 78.0,
+	"estrada-inverno-rock-1": 84.0,
+	"estrada-inverno-rock-2": 68.0,
+	"estrada-inverno-rock-3": 48.0,
+	"estrada-inverno-barrel-1": 60.0,
+	"estrada-inverno-barrel-2": 56.0,
+	"estrada-inverno-skull": 56.0,
+	"estrada-inverno-log-1": 88.0,
+	"estrada-inverno-log-2": 76.0,
+	"estrada-inverno-stump": 58.0,
+	"estrada-inverno-snow-rocks-1": 54.0,
+	"estrada-inverno-snow-rocks-2": 54.0,
+	"estrada-inverno-snow-pebbles-1": 42.0,
+	"estrada-inverno-snow-pebbles-2": 38.0,
+	"estrada-inverno-snow-bush-1": 52.0,
+	"estrada-inverno-snow-bush-2": 48.0,
 }
 
 ## Props transparentes curados da biblioteca externa. São declarados como
-## decoração no cenário, não entram no terrainMap e nunca alteram colisão,
-## custo de movimento, targeting ou fila de turnos.
+## decoração no cenário e nunca alteram custo de movimento, targeting ou fila
+## de turnos por si só — mas alguns (village-fence-broken/barricade/
+## bridge-broken) têm a própria célula somada a "blocked_tiles" pelo cenário
+## que os declara, então bloqueiam movimento como qualquer parede.
 func _draw_curated_props() -> void:
 	for decoration in scenario_definition.get("decorations", []):
 		var kind := String(decoration.get("kind", ""))
 		if not CURATED_PROP_TEXTURES.has(kind):
 			continue
-		var center := tile_center(int(decoration["x"]), int(decoration["y"]))
 		var tex := _get_tex(CURATED_PROP_TEXTURES[kind])
+		var span_w := int(decoration.get("w", 1))
+		var span_h := int(decoration.get("h", 1))
+		var center := Vector2(
+			(float(decoration["x"]) + float(span_w) * 0.5) * TILE_SIZE,
+			(float(decoration["y"]) + float(span_h) * 0.5) * TILE_SIZE
+		)
 		var village_prop := kind.begins_with("village-")
+		var village2_prop := kind.begins_with("village2-")
+		var porto_prop := kind.begins_with("porto-")
+		var desfiladeiro_prop := kind.begins_with("desfiladeiro-")
+		var estrada_inverno_prop := kind.begins_with("estrada-inverno-")
 		var hazard_prop := kind.begins_with("lava-") or kind.begins_with("corpse-")
 		var size: Vector2
 		var tint := Color.WHITE
 		if village_prop:
 			var tex_size: Vector2 = tex.get_size()
 			var max_dim: float = VILLAGE_PROP_MAX_DIM.get(kind, 64.0)
+			size = tex_size * (max_dim / maxf(tex_size.x, tex_size.y))
+		elif village2_prop:
+			# Recortes reais (ver CURATED_PROP_TEXTURES) — cores originais
+			# preservadas, sem tingimento (mesma ideia de porto/desfiladeiro/
+			# estrada-inverno abaixo).
+			var tex_size: Vector2 = tex.get_size()
+			var max_dim: float = VILLAGE2_PROP_MAX_DIM.get(kind, 80.0)
+			size = tex_size * (max_dim / maxf(tex_size.x, tex_size.y))
+		elif porto_prop:
+			var tex_size: Vector2 = tex.get_size()
+			if kind == "porto-house-2":
+				# A casa usa os quatro quadrados declarados no cenário, mantendo
+				# a proporção original e um pequeno respiro nas bordas.
+				size = tex_size * (min(span_w, span_h) * TILE_SIZE - 8.0) / maxf(tex_size.x, tex_size.y)
+			else:
+				var max_dim: float = PORTO_PROP_MAX_DIM.get(kind, 64.0)
+				size = tex_size * (max_dim / maxf(tex_size.x, tex_size.y))
+		elif desfiladeiro_prop:
+			var tex_size: Vector2 = tex.get_size()
+			var max_dim: float = DESFILADEIRO_PROP_MAX_DIM.get(kind, 64.0)
+			size = tex_size * (max_dim / maxf(tex_size.x, tex_size.y))
+		elif estrada_inverno_prop:
+			var tex_size: Vector2 = tex.get_size()
+			var max_dim: float = ESTRADA_INVERNO_PROP_MAX_DIM.get(kind, 64.0)
 			size = tex_size * (max_dim / maxf(tex_size.x, tex_size.y))
 		elif hazard_prop:
 			# Cores reais preservadas (sem tingimento) — a arte já é
@@ -1212,17 +2114,22 @@ func _draw_continuous_river() -> void:
 	_draw_river_bands(points)
 
 ## Bandas/gradiente + brilho de correnteza de um curso d'água contínuo —
-## reaproveitado pelo rio fixo do Campo (_draw_continuous_river) e pelo rio
-## real do Vale de Lua (_draw_lua_river), cada um com seus próprios pontos.
-func _draw_river_bands(points: PackedVector2Array) -> void:
+## reaproveitado pelo rio fixo do Campo (_draw_continuous_river), pelo rio
+## real do Vale de Lua (_draw_lua_river) e pelo rio do DESFILADEIRO
+## (_draw_desfiladeiro_chasm, ver `width_scale` abaixo), cada um com seus
+## próprios pontos. `width_scale` (default 1.0, sem efeito nos chamadores
+## que não passam o parâmetro) multiplica as 5 faixas — o DESFILADEIRO usa
+## um valor maior porque seu rio ocupa 2 células de largura, não 1 como o
+## rio fino do Campo/Vale de Lua.
+func _draw_river_bands(points: PackedVector2Array, bank_color: Color = Color("36582e"), width_scale: float = 1.0) -> void:
 	if points.size() < 2: return
 	# Margem orgânica contínua, profundidade e duas faixas internas formam
 	# um gradiente sem introduzir qualquer recorte entre quadrados.
-	draw_polyline(points, Color("36582e"), TILE_SIZE * 1.30, true)
-	draw_polyline(points, Color("123f5c"), TILE_SIZE * 1.08, true)
-	draw_polyline(points, Color("1d6687"), TILE_SIZE * 0.98, true)
-	draw_polyline(points, Color(0.20, 0.56, 0.67, 0.72), TILE_SIZE * 0.72, true)
-	draw_polyline(points, Color(0.28, 0.66, 0.73, 0.30), TILE_SIZE * 0.42, true)
+	draw_polyline(points, bank_color, TILE_SIZE * 1.30 * width_scale, true)
+	draw_polyline(points, Color("123f5c"), TILE_SIZE * 1.08 * width_scale, true)
+	draw_polyline(points, Color("1d6687"), TILE_SIZE * 0.98 * width_scale, true)
+	draw_polyline(points, Color(0.20, 0.56, 0.67, 0.72), TILE_SIZE * 0.72 * width_scale, true)
+	draw_polyline(points, Color(0.28, 0.66, 0.73, 0.30), TILE_SIZE * 0.42 * width_scale, true)
 
 	# Pequenos traços claros percorrem a curva para sugerir correnteza. São
 	# desenhados sobre o mesmo caminho, portanto também atravessam as emendas.

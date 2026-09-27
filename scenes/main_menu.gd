@@ -12,6 +12,7 @@ extends Control
 
 signal story_selected
 signal pvp_selected
+signal online_selected(mode: String)
 
 const ART_DIRECTION := preload("res://data/art_direction_config.gd")
 
@@ -21,12 +22,14 @@ const SELECTOR_FIRE_PATH := "res://assets/ui/selector_fire.png"
 const SELECTOR_REST_PATH := "res://assets/ui/selector_rest.png"
 
 const OPTIONS := [
+	{"key": "online_create", "label": "CRIAR PARTIDA ONLINE"},
+	{"key": "online_join", "label": "ENTRAR EM PARTIDA"},
 	{"key": "story", "label": "MODO HISTÓRIA"},
 	{"key": "pvp", "label": "MODO PVP"},
 ]
 
-const BUTTON_SIZE := Vector2(460, 96)
-const BUTTON_SEPARATION := 34.0
+const BUTTON_SIZE := Vector2(460, 72)
+const BUTTON_SEPARATION := 16.0
 const SELECTOR_SIZE := Vector2(150, 150)
 const SELECTOR_REST_SIZE := Vector2(90, 105)
 
@@ -71,7 +74,7 @@ func _ready() -> void:
 	hint.size = Vector2(viewport_size.x, 30)
 	add_child(hint)
 
-	var buttons_top := 560.0
+	var buttons_top := 400.0
 	var buttons_left := (viewport_size.x - BUTTON_SIZE.x) * 0.5
 	for i in OPTIONS.size():
 		var opt: Dictionary = OPTIONS[i]
@@ -163,8 +166,11 @@ func _confirm_selection() -> void:
 	tween.tween_interval(0.45)
 	tween.tween_callback(func():
 		var key: String = OPTIONS[_option_index]["key"]
-		if key == "story": story_selected.emit()
-		else: pvp_selected.emit()
+		match key:
+			"story": story_selected.emit()
+			"pvp": pvp_selected.emit()
+			"online_create": online_selected.emit("create")
+			"online_join": online_selected.emit("join")
 	)
 
 ## Pedido do usuário: a flecha disparada ao confirmar uma opção precisa

@@ -119,12 +119,23 @@ class WaterLegOverlay extends Node2D:
 const DISPLAY_HEIGHT := 96.0
 ## _apply_texture escala cada frame só pela altura do PNG (DISPLAY_HEIGHT /
 ## texture.get_height()), assumindo que todo frame tem a mesma proporção de
-## canvas. death.png do bardo é 734x378 (bem mais largo e baixo que os
-## ~340x540 dos outros frames dele), então esse auto-scale por altura infla
-## o resultado pra ~186px de largura — quase 3 quadrados. Esse multiplicador
-## corrige só esse frame pra ele voltar a caber em 1 quadrado, como o resto.
+## canvas. Os assets de heroes/enemies foram normalizados (canvas quadrado,
+## mesmo tamanho), mas o CONTEÚDO não fica sempre do mesmo tamanho dentro
+## desse canvas — poses de morte "deitadas" (Ladino/Fada/Guerreiro) ocupam bem
+## menos altura de canvas que a pose de pé, então escalar só pela altura do
+## PNG (igual pra todo frame) faz o cadáver renderizar bem menor na tela que o
+## personagem de pé, mesmo com o mesmo scale_factor de canvas. Pedido do
+## usuário: cadáveres "muito pequenos" comparados a andar/atacar/parado.
+## `SPRITE_SCALE_OVERRIDE[caminho_completo] = multiplicador` corrige só esses
+## quadros, aplicado em cima do auto-scale por altura — multiplicador escolhido
+## pra igualar a ÁREA visual renderizada do cadáver à da pose de pé
+## (idle/walk), mesmo cálculo do `frame_scale_files` de AnimalSpriteCatalog
+## (ver data/animal_sprite_catalog.gd) usado pelos outros personagens.
 const SPRITE_SCALE_OVERRIDE := {
-	"res://assets/heroes/bardo/death.png": 0.33,
+	"res://assets/heroes/ladino/ladino_death_1.png": 1.52,
+	"res://assets/enemies/fada/fada_death_1.png": 1.16,
+	"res://assets/heroes/guerreiro/guerreiro_death_1.png": 1.13,
+	"res://assets/heroes/guerreiro/guerreiro_death_2.png": 1.04,
 }
 const MOVE_DURATION := 0.22
 const FLASH_DURATION := 0.09
@@ -147,7 +158,12 @@ const HIT_SPARK_SCENE := preload("res://effects/hit_spark.tscn")
 const CHARACTER_VISUAL_CONTROLLER := preload("res://scenes/character_visual_controller.gd")
 const PREMIUM_ANIMATION := preload("res://data/premium_animation_profiles.gd")
 
-@export var use_3d_visual := true
+## Pedido do usuário: só o Guerreiro 2D (sprite) disponível por padrão.
+## CharacterVisualFactory continua com o profile 3D registrado (pipeline e
+## testes de test_character_3d_pipeline.gd inalterados) — só a exibição
+## automática fica desligada aqui. set_use_3d_visual(true) ainda liga o 3D
+## manualmente (ex.: warrior_ab_test em scenes/Main.tscn) se for religado.
+@export var use_3d_visual := false
 @export_range(0.45, 1.1, 0.01) var warrior_3d_scale := 0.72
 ## Screen-space offset for the 3D preview composite; keeps the feet on the tile.
 @export var warrior_3d_screen_offset := Vector2(0, -33)
@@ -215,12 +231,16 @@ const STATUS_STRIPS := {
 	"blinded": ["blinded_status_strip.png", 4, 2],
 	"bleed": ["bleed_status_strip.png", 4, 2],
 	"guarding": ["guarding_status_strip.png", 4, 2],
+	# Foco (Monge) reaproveita a faixa da postura defensiva do Guerreiro —
+	# é a mesma ideia de "guarda levantada" na tela.
+	"focus": ["guarding_status_strip.png", 4, 2],
+	"heronStance": ["guarding_status_strip.png", 4, 2],
 	"fury": ["fury_status_strip.png", 4, 2],
 	"regen": ["regen_status_strip.png", 4, 2],
 	"regenBoost": ["regen_status_strip.png", 4, 2],
 	"invisible": ["invisible_status_strip.png", 4, 2],
 }
-const STATUS_PRIORITY := ["paralyzed", "root", "dazed", "burned", "poison", "bleed", "blinded", "slowed", "weakened", "guarding", "fury", "regen", "regenBoost", "invisible", "evasive", "swiftFeet"]
+const STATUS_PRIORITY := ["paralyzed", "root", "dazed", "burned", "poison", "bleed", "blinded", "slowed", "weakened", "focus", "heronStance", "guarding", "fury", "regen", "regenBoost", "invisible", "evasive", "swiftFeet"]
 ## Mantido vazio apenas para compatibilidade com o caminho visual genérico;
 ## os cinco inimigos agora são atendidos exclusivamente por ANIMAL_SPECS.
 const SPD_MOB_SPECS := {}
@@ -363,6 +383,14 @@ func _ready() -> void:
 	_name_label.add_theme_constant_override("shadow_offset_x", 1)
 	_name_label.add_theme_constant_override("shadow_offset_y", 1)
 	_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# Corta com reticências em vez de quebrar linha ou estourar a largura do
+	# tile (nome completo continua disponível no painel de inspeção da
+	# unidade); mouse_filter=IGNORE pra clicar em cima do nome nunca "roubar"
+	# o clique do tile por baixo dele (quem resolve seleção é sempre
+	# board_view.tile_at_local_pos, a grade lógica).
+	_name_label.clip_text = true
+	_name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_name_label.position = Vector2(-BoardView.TILE_SIZE * 0.5, BoardView.TILE_SIZE * 0.5 - 15)
 	_name_label.size = Vector2(BoardView.TILE_SIZE, 14)
 	_ui_root.add_child(_name_label)
@@ -373,11 +401,19 @@ func _ready() -> void:
 	_hp_label.add_theme_constant_override("shadow_offset_x", 1)
 	_hp_label.add_theme_constant_override("shadow_offset_y", 1)
 	_hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hp_label.position = Vector2(-BoardView.TILE_SIZE * 0.5, BoardView.TILE_SIZE * 0.5 + 9)
 	_hp_label.size = Vector2(BoardView.TILE_SIZE, 14)
 	_ui_root.add_child(_hp_label)
-	_hp_bar = _make_resource_bar(Vector2(-36, 38), Vector2(72, 14), Color("bd2635"), Color("ed5360"), 9)
-	_mp_bar = _make_resource_bar(Vector2(-34, 53), Vector2(68, 12), Color("2369c8"), Color("4fa6f5"), 8)
+	_hp_bar = _make_resource_bar(Vector2(-36, 33), Vector2(72, 14), Color("bd2635"), Color("ed5360"), 9)
+	_mp_bar = _make_resource_bar(Vector2(-34, 48), Vector2(68, 12), Color("2369c8"), Color("4fa6f5"), 8)
+	# Pedido do usuário: HP/MP de volta no próprio personagem (também
+	# continuam na fila de turnos, ver main.gd:_refresh_turn_queue()).
+	# Visibilidade de verdade é decidida por refresh() (unit["hp"]>0), não
+	# aqui — isto só evita um frame com a barra em branco antes do primeiro
+	# refresh().
+	_hp_bar.visible = true
+	_mp_bar.visible = true
 	_apply_warrior_3d_ui_layout()
 
 	_corpse_badge = Label.new()
@@ -611,6 +647,7 @@ func spawn_bard_song_failure(song_kind: String) -> Sprite2D:
 func _advance_spd_idle(delta: float) -> void:
 	var sprite_key: String = _visual_sprite_key()
 	if ANIMAL_SPECS.has(sprite_key):
+		if unit.get("riderSpriteKey", "") != "": return
 		var key := _animal_directional_key("idle", _facing_direction())
 		var animal_anim: Array = ANIMAL_SPECS[sprite_key]["anims"].get(key, [])
 		if animal_anim.is_empty(): return
@@ -787,8 +824,11 @@ func _setup_warrior_3d_visual() -> void:
 
 func _update_warrior_3d_visibility() -> void:
 	var enabled := _uses_warrior_3d()
-	if _warrior_viewport_sprite != null: _warrior_viewport_sprite.visible = enabled
-	if _sprite != null: _sprite.visible = not enabled
+	# Cavaleiro montado: quem é desenhado é a dupla (token da Vestruz) — nem o
+	# sprite 2D nem o modelo 3D do herói aparecem por cima.
+	var riding: bool = unit.get("mountedOn", "") != ""
+	if _warrior_viewport_sprite != null: _warrior_viewport_sprite.visible = enabled and not riding
+	if _sprite != null: _sprite.visible = not enabled and not riding
 	if _warrior_viewport != null:
 		_warrior_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if enabled else SubViewport.UPDATE_DISABLED
 
@@ -833,7 +873,49 @@ func _build_sync_snapshot() -> Array:
 		unit.get("scriptedRevive", false), unit.get("resurrectionTurns", -1),
 		unit.get("statusEffects", []).duplicate(true),
 		unit.get("footprintWidth", unit.get("footprintSize", 1)), unit.get("footprintHeight", unit.get("footprintSize", 1)),
+		unit.get("mountedOn", ""), unit.get("riderName", ""), unit.get("riderSpriteKey", ""),
 	]
+
+## Cavaleiro montado: desenhado menor e acima da montaria, no mesmo quadrado.
+func _mount_offset() -> Vector2:
+	return Vector2.ZERO
+
+## Sprites "idle montado" (herói + Vestruz numa imagem só, uma pose por direção):
+## assets/heroes/<pasta do herói>/mounted_idle_<front|back|left|right>.png, todos
+## na mesma tela (684x618) com a base dos pés na mesma linha — ver
+## tools/prepare_mounted_sprites.py. Só existe pose PARADA: não há animação de
+## caminhada montada, então durante o deslocamento a dupla desliza na pose da
+## direção do movimento.
+const MOUNTED_CANVAS_HEIGHT := 618.0
+const MOUNTED_FOOT_MARGIN := 9.0
+const MOUNTED_SCALE_MULT := 1.2
+const MOUNTED_DIRECTION_FILE := {"down": "front", "up": "back", "left": "left", "right": "right"}
+
+func _mounted_pose_path(direction: String) -> String:
+	var rider_key: String = String(unit.get("riderSpriteKey", ""))
+	if rider_key == "": return ""
+	var folder: String = SpriteManifest.SPRITE_MANIFEST.get(rider_key, "")
+	if folder == "": return ""
+	var path := "%s/mounted_idle_%s.png" % [folder, MOUNTED_DIRECTION_FILE.get(direction, "front")]
+	return path if ResourceLoader.exists(path) else ""
+
+## Escala pela altura da tela (igual aos outros quadros) e ancora a BASE DOS PÉS
+## (linha fixa da tela) no chão do quadrado — nunca pelo bbox, que mudaria de
+## pose pra pose e faria a dupla "saltar" ao trocar de direção.
+func _apply_mounted_texture(texture: Texture2D) -> void:
+	var scale_factor: float = DISPLAY_HEIGHT / texture.get_height() * MOUNTED_SCALE_MULT
+	_sprite.texture = texture
+	_sprite.scale = Vector2.ONE * scale_factor
+	var foot_row: float = float(texture.get_height()) - MOUNTED_FOOT_MARGIN
+	_sprite.offset = Vector2(0.0, float(texture.get_height()) * 0.5 - foot_row + (DISPLAY_HEIGHT * 0.5) / scale_factor)
+	_sprite.flip_h = false
+
+func _show_mounted_pose(direction: String) -> bool:
+	var path := _mounted_pose_path(direction)
+	if path == "": return false
+	_spd_idle_running = false
+	_apply_mounted_texture(load(path) as Texture2D)
+	return true
 
 func refresh() -> void:
 	if unit.is_empty():
@@ -844,26 +926,50 @@ func refresh() -> void:
 	_last_sync_snapshot = sync_snapshot
 	var footprint_width := maxi(1, int(unit.get("footprintWidth", unit.get("footprintSize", 1))))
 	var footprint_height := maxi(1, int(unit.get("footprintHeight", unit.get("footprintSize", 1))))
-	var target_pos: Vector2 = Vector2(unit["x"], unit["y"]) * BoardView.TILE_SIZE + Vector2(footprint_width, footprint_height) * BoardView.TILE_SIZE * 0.5
+	var target_pos: Vector2 = Vector2(unit["x"], unit["y"]) * BoardView.TILE_SIZE + Vector2(footprint_width, footprint_height) * BoardView.TILE_SIZE * 0.5 + _mount_offset()
 	var body_half_size := BoardView.TILE_SIZE * float(footprint_height) * 0.5
 	# Profundidade usa os pés/base lógica da unidade. A UI fica numa camada
 	# global própria e nunca é escondida por copas ou construções.
 	z_index = roundi(target_pos.y + body_half_size)
+	var is_riding: bool = unit.get("mountedOn", "") != ""
+	# Montado: quem aparece é a dupla (sprite "idle montado" no token da Vestruz,
+	# que mostra o HP/MP dela); o token do cavaleiro fica sem desenho, só como
+	# âncora de seleção/status.
+	scale = Vector2.ONE
+	_sprite.visible = not is_riding
+	if _shadow != null and is_riding: _shadow.visible = false
 	var board := get_parent() as BoardView
 	if board != null:
 		z_index = maxi(z_index, board.structure_occupant_z(int(unit["x"]), int(unit["y"])))
 	var info_width := BoardView.TILE_SIZE * float(footprint_width)
 	var ui_top_offset := body_half_size - 15.0
+	# Pedido do usuário: monstro 2x2 (Goo grande/Salamandra/Dragão/Troll)
+	# também aumenta nome/HP/MP proporcionalmente, não só o sprite.
+	var is_big: bool = footprint_width > 1 or footprint_height > 1
+	var big_ui_scale := 1.5 if is_big else 1.0
 	if not _uses_warrior_3d():
 		_name_label.position = Vector2(-info_width * 0.5, ui_top_offset)
 		_name_label.size.x = info_width
+		_name_label.add_theme_font_size_override("font_size", roundi(12 * big_ui_scale))
 	var animal_spec: Dictionary = ANIMAL_SPECS.get(_visual_sprite_key(), {})
 	if _uses_warrior_3d():
 		_apply_warrior_3d_ui_layout()
 	else:
-		var resource_y := float(animal_spec.get("bar_y", body_half_size + 6.0))
-		_hp_bar.position = Vector2(-36, resource_y)
-		_mp_bar.position = Vector2(-34, resource_y + 15.0)
+		# Em unidades 2x2, a barra fica logo abaixo dos pés da área inteira;
+		# não reutiliza o bar_y calibrado para criaturas 1x1 (como o Goo antigo).
+		var resource_y := body_half_size + 1.0 if is_big else float(animal_spec.get("bar_y", body_half_size + 1.0))
+		var hp_size := Vector2(72, 14) * big_ui_scale
+		var mp_size := Vector2(68, 12) * big_ui_scale
+		_hp_bar.custom_minimum_size = hp_size
+		_hp_bar.size = hp_size
+		_hp_bar._value_label.add_theme_font_size_override("font_size", roundi(9 * big_ui_scale))
+		_hp_bar.queue_redraw()
+		_mp_bar.custom_minimum_size = mp_size
+		_mp_bar.size = mp_size
+		_mp_bar._value_label.add_theme_font_size_override("font_size", roundi(8 * big_ui_scale))
+		_mp_bar.queue_redraw()
+		_hp_bar.position = Vector2(-hp_size.x * 0.5, resource_y)
+		_mp_bar.position = Vector2(-mp_size.x * 0.5, resource_y + 15.0 * big_ui_scale)
 	var first_refresh: bool = _last_hp == -1
 	var moving: bool = _path_animating
 	if first_refresh:
@@ -981,16 +1087,17 @@ func refresh() -> void:
 		# Some sozinha assim que caged vira false (ver GameState._release_caged_mage).
 		_cage_sprite.visible = alive and caged
 
-	_name_label.text = unit.get("name", "")
+	_name_label.text = unit.get("name", "") if unit.get("riderName", "") == "" else "%s + %s" % [unit.get("name", ""), unit.get("riderName", "")]
+	_name_label.visible = not is_riding
 	_hp_label.text = "%d/%d" % [maxi(unit["hp"], 0), unit["maxHp"]]
 	_hp_label.visible = false
 	var hp_ratio: float = float(unit["hp"]) / float(unit["maxHp"]) if unit["maxHp"] > 0 else 0.0
 	if _uses_warrior_3d(): _warrior_3d.set_health_ratio(hp_ratio)
 	_hp_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.3) if hp_ratio > 0.5 else (Color(0.95, 0.8, 0.2) if hp_ratio > 0.2 else Color(0.95, 0.3, 0.3)))
 	_hp_bar.set_values(int(unit.get("hp", 0)), int(unit.get("maxHp", 0)))
-	_hp_bar.visible = alive
+	_hp_bar.visible = alive and not is_riding
 	_mp_bar.set_values(int(unit.get("mp", 0)), int(unit.get("maxMp", 0)))
-	_mp_bar.visible = alive and unit.has("maxMp")
+	_mp_bar.visible = alive and unit.has("maxMp") and not is_riding
 	_water_overlay.visible = alive and not unit.get("flying", false) and _unit_is_on_water()
 	_refresh_status_vfx()
 	queue_redraw()
@@ -1036,7 +1143,7 @@ func animate_path(path_tiles: Array, speed_scale: float = 1.0) -> void:
 	for tile in path_tiles:
 		var footprint_width := maxi(1, int(unit.get("footprintWidth", unit.get("footprintSize", 1))))
 		var footprint_height := maxi(1, int(unit.get("footprintHeight", unit.get("footprintSize", 1))))
-		var next_pos := Vector2(tile["x"], tile["y"]) * BoardView.TILE_SIZE + Vector2(footprint_width, footprint_height) * BoardView.TILE_SIZE * 0.5
+		var next_pos := Vector2(tile["x"], tile["y"]) * BoardView.TILE_SIZE + Vector2(footprint_width, footprint_height) * BoardView.TILE_SIZE * 0.5 + _mount_offset()
 		var segment_distance := previous.distance_to(next_pos) / BoardView.TILE_SIZE
 		_move_tween.tween_callback(_set_visual_move_direction.bind((next_pos - previous).normalized()))
 		var segment = _move_tween.tween_property(self, "position", next_pos, maxf(0.12, 0.15 * segment_distance) * speed_scale)
@@ -1174,6 +1281,9 @@ func _flash_hit(rest_color: Color, critical: bool = false) -> void:
 func _idle_texture() -> Array:
 	var sprite_key: String = _visual_sprite_key()
 	if ANIMAL_SPECS.has(sprite_key):
+		var mounted_path := _mounted_pose_path(_facing_direction())
+		if mounted_path != "":
+			return [load(mounted_path), false, mounted_path]
 		var key := _animal_directional_key("idle", _facing_direction())
 		var anim: Array = ANIMAL_SPECS[sprite_key]["anims"].get(key, [])
 		if anim.is_empty(): return [null, false]
@@ -1235,20 +1345,102 @@ func _restore_idle_pose() -> void:
 	# de refresh() — religa _process aqui se a respiração idle voltou a valer.
 	_sync_process_active()
 
+## Cache do retângulo de pixels REALMENTE visíveis (alpha acima do limiar)
+## de uma textura de referência — computado uma vez por chave e reaproveitado
+## depois, então nem reprocessa pixel a pixel toda hora nem faz o personagem
+## "pular" de tamanho/posição entre poses (mesmo recorte sempre pra quem
+## compartilha a mesma chave). Duas chamadas abaixo usam chaves diferentes
+## por bom motivo: _apply_texture cacheia por spriteKey (canvas uniforme
+## entre poses, ver comentário de DISPLAY_HEIGHT) — _apply_animal_texture
+## (PNGs "já recortados por ação") cacheia por caminho de arquivo, porque
+## aqui cada ação pode ter seu próprio canvas (ver comentário original nela).
+static var _visible_bounds_cache: Dictionary = {}
+
+static func _get_visible_bounds(cache_key: String, reference_texture: Texture2D) -> Rect2:
+	if _visible_bounds_cache.has(cache_key):
+		return _visible_bounds_cache[cache_key]
+	var bounds := Rect2(Vector2.ZERO, reference_texture.get_size())
+	var image := reference_texture.get_image()
+	if image != null:
+		if image.is_compressed(): image.decompress()
+		var w := image.get_width()
+		var h := image.get_height()
+		var min_x := w
+		var min_y := h
+		var max_x := -1
+		var max_y := -1
+		const ALPHA_THRESHOLD := 10.0 / 255.0
+		for y in h:
+			for x in w:
+				if image.get_pixel(x, y).a > ALPHA_THRESHOLD:
+					if x < min_x: min_x = x
+					if x > max_x: max_x = x
+					if y < min_y: min_y = y
+					if y > max_y: max_y = y
+		if max_x >= min_x and max_y >= min_y:
+			bounds = Rect2(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
+	_visible_bounds_cache[cache_key] = bounds
+	return bounds
+
+## Offset (em pixels de TEXTURA, aplicado antes da escala pelo próprio
+## Sprite2D) que centraliza o BBOX visível — não o canvas inteiro — no ponto
+## (0,0) do nó. _sprite.position sempre descansa em Vector2.ZERO (recoil/
+## flash/lunge sempre voltam pra lá, ver _flash_hit), e (0,0) É o centro do
+## tile (ver refresh(): target_pos aponta o TOKEN pro centro do tile; o
+## sprite não tem posição própria além dessa). Por isso corrigir só o
+## OFFSET, nunca a position, centraliza o personagem sem mexer em nenhuma
+## animação existente.
+static func _centering_offset(bounds: Rect2, texture: Texture2D) -> Vector2:
+	var tex_size := Vector2(texture.get_width(), texture.get_height())
+	var bbox_center := bounds.position + bounds.size * 0.5
+	return tex_size * 0.5 - bbox_center
+
 func _apply_texture(texture: Texture2D, flip: bool, source_path: String = "") -> void:
 	if texture == null:
 		return
 	_sprite.texture = texture
-	_sprite.offset = Vector2.ZERO
+	var sprite_key: String = unit.get("spriteKey", "")
 	var scale_factor: float = DISPLAY_HEIGHT / texture.get_height()
-	if SPD_MOB_SPECS.has(unit.get("spriteKey", "")):
+	if SPD_MOB_SPECS.has(sprite_key):
 		scale_factor = DISPLAY_HEIGHT / SPD_MOB_SCALE_REFERENCE_HEIGHT
-	if int(unit.get("footprintWidth", unit.get("footprintSize", 1))) > 1 or int(unit.get("footprintHeight", unit.get("footprintSize", 1))) > 1:
-		# Ocupa visualmente a caixa 2x2 completa, preservando pixel perfeito.
-		var footprint_fill := 1.88 if unit.get("spriteKey", "") == "spd_goo" and int(unit.get("slimeStage", -1)) == 0 else 1.72
-		scale_factor = (BoardView.TILE_SIZE * footprint_fill) / texture.get_height()
+	var footprint_w := maxi(1, int(unit.get("footprintWidth", unit.get("footprintSize", 1))))
+	var footprint_h := maxi(1, int(unit.get("footprintHeight", unit.get("footprintSize", 1))))
+	if footprint_w > 1 or footprint_h > 1:
+		# Pedido do usuário: unidade multitile (Goo grande, Salamandra, Dragão
+		# Vermelho) escalada pelo bbox REAL de pixel visível (mesma técnica de
+		# _get_visible_bounds/_centering_offset usada no caso 1x1 abaixo) até
+		# a altura exata da caixa footprint_h x footprint_h — pés colados na
+		# base da caixa, cabeça encostando no topo, maior que os personagens
+		# de 1 quadrado por construção (não mais um fator de preenchimento
+		# "no olho" por spriteKey).
+		var bounds := _get_visible_bounds(sprite_key, texture)
+		var box_size := Vector2(footprint_w, footprint_h) * BoardView.TILE_SIZE
+		var box_height := box_size.y
+		# Goo, Salamandra e Dragão são criaturas grandes 2x2. O cálculo
+		# anterior preenchia apenas a altura, deixando largura vazia dentro dos
+		# quatro quadrados. Para esses três, usamos a maior escala necessária
+		# para ocupar também a largura, mantendo a proporção do sprite.
+		if sprite_key in ["spd_goo", "tower_salamander", "dragon"]:
+			var fill_box := box_size - Vector2.ONE * 8.0
+			scale_factor = maxf(fill_box.y / bounds.size.y, fill_box.x / bounds.size.x)
+			if sprite_key in ["tower_salamander", "dragon"]:
+				scale_factor *= 0.85
+		else:
+			scale_factor = box_height / bounds.size.y
+		var tex_size := Vector2(texture.get_width(), texture.get_height())
+		var bbox_bottom_center := Vector2(bounds.position.x + bounds.size.x * 0.5, bounds.position.y + bounds.size.y)
+		# offset é aplicado em espaço de TEXTURA (antes do scale, ver
+		# _centering_offset) — por isso o deslocamento mundo->textura abaixo
+		# divide por scale_factor: quero o pé (base do bbox) exatamente na
+		# borda inferior da caixa (metade de box_height abaixo do centro do
+		# token, que é onde target_pos ancora a unidade — ver refresh()).
+		_sprite.offset = tex_size * 0.5 - bbox_bottom_center + Vector2(0, (box_height * 0.5) / scale_factor)
+		_sprite.scale = Vector2(scale_factor, scale_factor)
+		_sprite.flip_h = flip
+		return
 	if SPRITE_SCALE_OVERRIDE.has(source_path):
 		scale_factor *= float(SPRITE_SCALE_OVERRIDE[source_path])
+	_sprite.offset = _centering_offset(_get_visible_bounds(sprite_key, texture), texture)
 	_sprite.scale = Vector2(scale_factor, scale_factor)
 	_sprite.flip_h = flip
 
@@ -1266,14 +1458,41 @@ func _animal_frame_texture(sprite_key: String, frame) -> Texture2D:
 func _apply_animal_texture(sprite_key: String, texture: Texture2D, frame, flip: bool) -> void:
 	if texture == null: return
 	_sprite.texture = texture
+	var footprint_w := maxi(1, int(unit.get("footprintWidth", unit.get("footprintSize", 1))))
+	var footprint_h := maxi(1, int(unit.get("footprintHeight", unit.get("footprintSize", 1))))
+	if footprint_w > 1 or footprint_h > 1:
+		# Usa o bbox visível de cada frame, ignorando transparência do canvas.
+		# Isso mantém idle, movimento, ataque, hit e morte centrados na área 2x2.
+		var bounds_key := String(frame) if typeof(frame) == TYPE_STRING else "%s:%s" % [sprite_key, str(frame)]
+		var bounds := _get_visible_bounds(bounds_key, texture)
+		var box_size := Vector2(footprint_w, footprint_h) * BoardView.TILE_SIZE
+		var fill_box := box_size - Vector2.ONE * 8.0
+		var scale_factor := maxf(fill_box.y / maxf(bounds.size.y, 1.0), fill_box.x / maxf(bounds.size.x, 1.0))
+		if sprite_key in ["tower_salamander", "dragon"]:
+			scale_factor *= 0.85
+		# Cadáver deitado (quadro "death"): é largo e baixo, então preencher a
+		# ALTURA da caixa o fazia transbordar bem além dos 2x2 quadrados do Troll.
+		# Aqui o desenho inteiro tem que caber DENTRO da área do footprint.
+		if typeof(frame) == TYPE_STRING and String(frame).contains("death"):
+			scale_factor = minf(scale_factor, minf(fill_box.x / maxf(bounds.size.x, 1.0), fill_box.y / maxf(bounds.size.y, 1.0)))
+		var tex_size := Vector2(texture.get_width(), texture.get_height())
+		var bbox_bottom_center := Vector2(bounds.position.x + bounds.size.x * 0.5, bounds.position.y + bounds.size.y)
+		_sprite.scale = Vector2.ONE * scale_factor
+		_sprite.offset = tex_size * 0.5 - bbox_bottom_center + Vector2(0, (box_size.y * 0.5) / scale_factor)
+		_sprite.flip_h = flip
+		return
+	if typeof(frame) == TYPE_STRING and String(frame).contains("/mounted_idle_"):
+		_apply_mounted_texture(texture)
+		return
 	if typeof(frame) == TYPE_STRING:
-		# PNG já recortado: escala pra altura de exibição padrão e ancora o
-		# centro inferior da própria textura no tile (mesma ideia da region,
-		# só que a "altura" agora vem do arquivo em vez do retângulo).
+		# PNG já recortado por ação: escala pra altura de exibição padrão e
+		# centraliza pelo bbox REAL de pixel visível desse arquivo (cacheado
+		# pelo próprio caminho, não pelo spriteKey — cada ação pode ter seu
+		# próprio canvas, ver ASSET_SOURCES.md).
 		var scale_factor: float = DISPLAY_HEIGHT / texture.get_height()
 		scale_factor *= float(ANIMAL_SPECS[sprite_key].get("frame_scale", {}).get(frame, 1.0))
 		_sprite.scale = Vector2.ONE * scale_factor
-		_sprite.offset = Vector2(0.0, -float(texture.get_height()) * 0.5)
+		_sprite.offset = _centering_offset(_get_visible_bounds(frame, texture), texture)
 	else:
 		_sprite.scale = Vector2.ONE * float(ANIMAL_SPECS[sprite_key]["scale"])
 		# Ancora o centro inferior da region no tile. Como todas as regions têm
@@ -1366,6 +1585,10 @@ func _movement_direction(delta: Vector2) -> String:
 ## `hold_last` mantém o sprite parado no frame final (usado pela morte) em
 ## vez de voltar pra pose parada quando a sequência termina.
 func play_action(action_key: String, duration_sec: float, hold_last: bool = false, fallback_action_key: String = "") -> bool:
+	# Dupla montada: só existe a pose idle montada, sem quadros de ataque/hit da
+	# Vestruz sozinha (o flash de dano e o recuo continuam valendo).
+	if unit.get("riderSpriteKey", "") != "" and action_key != "death":
+		return false
 	var sprite_key: String = _visual_sprite_key()
 	if ANIMAL_SPECS.has(sprite_key):
 		if _play_animal_action(sprite_key, action_key, hold_last): return true
@@ -1490,6 +1713,8 @@ func _play_spd_walk(sprite_key: String, duration_sec: float) -> bool:
 
 func _play_walk_cycle(direction: String, duration_sec: float) -> void:
 	var sprite_key: String = unit.get("spriteKey", "")
+	if unit.get("riderSpriteKey", "") != "" and _show_mounted_pose(direction):
+		return
 	if ANIMAL_SPECS.has(sprite_key):
 		_play_animal_walk(sprite_key, direction, duration_sec)
 		return
@@ -1526,11 +1751,35 @@ func _play_animal_walk(sprite_key: String, direction: String, duration_sec: floa
 		tween.tween_interval(step)
 	tween.tween_callback(_tween_restore_spd_idle.bind(token))
 
+## Voo longo até `target_pos` (Chute do Dragão do Monge): mantém a pose
+## `action_key` (arte da voadora) congelada durante todo o trajeto, em arco
+## suave (sobe até a metade e desce), e só devolve a pose parada ao pousar.
+## Marca _path_animating pra refresh() não iniciar o passo de caminhada
+## normal pro mesmo deslocamento.
+func play_flight(target_pos: Vector2, duration: float, action_key: String = "voadora") -> void:
+	if _move_tween != null and _move_tween.is_valid(): _move_tween.kill()
+	_path_animating = true
+	play_action(action_key, duration, true)
+	_move_tween = create_tween()
+	_move_tween.tween_property(self, "position", target_pos, duration).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_move_tween.tween_callback(func():
+		_path_animating = false
+		if unit.get("hp", 0) > 0: _restore_idle_pose()
+	)
+	if _visual_root != null:
+		var arc := create_tween()
+		arc.tween_property(_visual_root, "position:y", -36.0, duration * 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		arc.tween_property(_visual_root, "position:y", 0.0, duration * 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+
 ## Chamado pela view (main.gd) quando esta unidade acerta um golpe com
 ## arma — equivalente a playSpriteAction(attacker, spriteActionKey, ...).
-func play_attack(duration_sec: float = ATTACK_ACTION_DURATION) -> bool:
+## `action_key` permite que um item escolha a arte do próprio golpe (campo
+## "spriteAction" em weapons.gd/spells.gd — ex.: "soco"/"chute" do Monge);
+## sem ele, todo mundo continua usando "attack" como antes, e qualquer
+## personagem sem arte pra essa ação cai de volta em "attack".
+func play_attack(duration_sec: float = ATTACK_ACTION_DURATION, action_key: String = "attack") -> bool:
 	if _uses_warrior_3d(): return _warrior_3d.play_attack_light()
-	return play_action("attack", duration_sec, false)
+	return play_action(action_key, duration_sec, false, "attack")
 
 ## Ponto visual de saída reutilizável para flechas, virotes, tiros e magia.
 ## O deslocamento acompanha a direção sem alterar a posição lógica no grid.
@@ -1575,12 +1824,12 @@ func play_ranged_release(target_world_position: Vector2, release_delay: float = 
 
 ## Antecipação/lunge puramente local ao VisualRoot. O token permanece no
 ## centro lógico do tile durante toda a sequência.
-func play_weighted_attack(target_world_position: Vector2, critical: bool = false) -> bool:
+func play_weighted_attack(target_world_position: Vector2, critical: bool = false, action_key: String = "attack") -> bool:
 	if _uses_warrior_3d():
 		var direction := (target_world_position - position).normalized()
 		_warrior_3d.face_direction(Vector3(direction.x, 0.0, direction.y), true)
 		return _warrior_3d.play_attack_heavy(critical) if critical else _warrior_3d.play_attack_light()
-	if not _uses_weighted_visuals(): return play_attack()
+	if not _uses_weighted_visuals(): return play_attack(ATTACK_ACTION_DURATION, action_key)
 	if not _begin_premium_action(PREMIUM_ANIMATION.Priority.ATTACK): return false
 	var direction := (target_world_position - position).normalized()
 	if direction == Vector2.ZERO: direction = Vector2.RIGHT
@@ -1599,7 +1848,7 @@ func play_weighted_attack(target_world_position: Vector2, critical: bool = false
 	_visual_action_tween.parallel().tween_property(_visual_root, "scale", Vector2(0.97, 1.04), 0.095)
 	_visual_action_tween.parallel().tween_property(_visual_root, "rotation", direction.x * 0.025, 0.095)
 	_visual_action_tween.tween_callback(func():
-		play_action("attack", 0.26, false)
+		play_action(action_key, 0.26, false, "attack")
 		_spawn_premium_smear(direction, String(_character_visual.visual_profile_name()) == "rogue")
 		_spawn_ground_effect(DUST_SCENE)
 	)

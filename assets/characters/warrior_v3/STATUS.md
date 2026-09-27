@@ -1,6 +1,6 @@
 # Warrior_V3 — fonte de verdade
 
-Última atualização: 2026-09-05 (America/Sao_Paulo)
+Última atualização: 2026-09-06 (America/Sao_Paulo)
 
 ## Objetivo
 
@@ -20,7 +20,7 @@ Produzir `Warrior_V3.glb` pela pipeline `reference -> concept -> raw mesh -> vis
 | 3 — rig | DONE_AND_PRESENT | `rigged/Warrior_V3_RIGGED.glb`, `BONE_MAP.json`, `RIG_QA.md`; 23 bones, dez poses PASS, fonte Blender preservada. |
 | 3A — static preview | PASS | STATIC_GODOT_PREVIEW = PASS; cena isolada `tools/warrior_v3/WarriorV3Preview.tscn`, cinco screenshots em `previews/godot_static/`. |
 | 4 — sword/shield sockets | DONE_AND_PRESENT | GLBs independentes; variante EQUIPPABLE de 53 bones preserva rig aprovado; SOCKET QA = PASS; GODOT EQUIPMENT PREVIEW = PASS. Sete poses e quatro direções; `equipment/EQUIPMENT_QA.md`. |
-| 5 — animations | NOT_STARTED | Nenhuma animação V3. |
+| 5 — animations | PARTIAL | Auditoria de fontes e candidato de retarget Quaternius CC0 presentes em animations/work. Sete bases sem aprovação final; ajuste de equipamentos, contatos e fases pendente. |
 | 6 — Godot integration | NOT_STARTED | Nenhuma cena/profile/flag V3. |
 | 7 — UI | PARTIAL | Trabalho existente aplica-se somente ao Guerreiro legado. |
 | 8 — final QA | NOT_STARTED | Não existe asset 3D V3 para QA final. |
@@ -76,4 +76,4 @@ Produzir `Warrior_V3.glb` pela pipeline `reference -> concept -> raw mesh -> vis
 
 ## Próximo gate
 
-Stage 3 DONE_AND_PRESENT; STATIC_GODOT_PREVIEW = PASS; commit `378779c`. Stage 4 DONE_AND_PRESENT: SOCKET QA = PASS e GODOT EQUIPMENT PREVIEW = PASS. Recuperação com dedos articulados em variante separada, empunhaduras ajustadas e acabamento de madeira/metal. Stage 5 NOT_STARTED: pré-condições satisfeitas para auditoria de fontes de animação. RAW e rig aprovados preservados; nenhuma integração de combate.
+Stage 3 DONE_AND_PRESENT; STATIC_GODOT_PREVIEW = PASS; commit `378779c`. Stage 4 DONE_AND_PRESENT: SOCKET QA = PASS e GODOT EQUIPMENT PREVIEW = PASS; commit `282a4bf`. Stage 5 PARTIAL: candidato de retarget em avaliação. Tripo recusou retarget do rig Mixamo (saldo devolvido, custo líquido zero); fontes CC0 Quaternius em uso. Próximo gate: motion QA com equipamentos, contatos e fases dos golpes. RAW e rigs aprovados preservados; nenhuma integração de combate.

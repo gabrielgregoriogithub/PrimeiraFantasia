@@ -1,0 +1,26 @@
+{
+    "submitted_at":  "2026-09-06T02:09:26.7464981Z",
+    "source_rig_model":  "v1.0-20240301",
+    "status":  "pending",
+    "expected_credits":  60,
+    "balance_before":  {
+                           "balance":  705.00,
+                           "frozen":  0.00
+                       },
+    "endpoint":  "/v3/animations/retarget",
+    "parameters":  {
+                       "bake_animation":  true,
+                       "animate_in_place":  true,
+                       "animations":  [
+                                          "preset:biped:idle",
+                                          "preset:biped:walk",
+                                          "preset:biped:slash",
+                                          "preset:biped:chop",
+                                          "preset:biped:hurt",
+                                          "preset:biped:fall"
+                                      ],
+                       "export_with_geometry":  false,
+                       "input":  "2dcc9eeb-9e93-4277-b0d8-8f732a07c6f9",
+                       "out_format":  "glb"
+                   }
+}

@@ -50,8 +50,12 @@ const SFX_ALIASES := {
 	"counter":"strong_hit",
 	"poison":"poison_status","toxicGasSpd":"poison_status","burningSpd":"fire_status",
 	"freeze":"ice_status","iceCast":"ray","lightning":"lightning","nature":"nature",
-	"heal":"heal","blast":"blast","flaskThrow":"bomb_throw","trapTrigger":"debuff",
+	# Pedido do usuário: "heal" não usa mais o charms.mp3 do SPD — troca pelo
+	# sino sintetizado mais divino/lírico (ver o case "heal" no match abaixo).
+	"blast":"blast","flaskThrow":"bomb_throw","trapTrigger":"debuff",
 	"stun":"debuff","blind":"debuff","root":"nature","death":"death",
+	"goblinLowBlow":"strong_hit","goblinPoison":"poison_status","goblinSand":"debuff",
+	"goblinDash":"charge","goblinAmbush":"strong_hit","goblinBarrel":"blast","goblinPlayDead":"nature",
 }
 
 # Equivalente a MUSIC_TARGET_VOLUME (0.2 de amplitude) em decibéis.
@@ -390,8 +394,16 @@ func play_sfx(key: String, pan: float = 0.0) -> void:
 		"fireballReleaseSpd":
 			if _spd_fireball_release_stream != null: _play_external(_spd_fireball_release_stream, -8.0, "SFX")
 		"fireballImpactSpd":
+			# Pedido do usuário: o impacto da Bola de Fogo da Maga soava como uma
+			# explosão genérica (só blast.wav) sem "cara" de fogo/brasa. Mantém o
+			# estrondo original só como corpo grave (mais baixo, -9dB), soma o
+			# crepitar real de fogo do próprio SPD (burning.wav, mesmo asset do
+			# status Queimando) e um chiado sintetizado de brasa por cima
+			# (ruído passa-alta curto) pra ficar reconhecível como fogo.
 			duck_music(4.0, 0.20)
-			if _spd_fireball_impact_stream != null: _play_external(_spd_fireball_impact_stream, -5.0, "SFX")
+			if _spd_fireball_impact_stream != null: _play_external(_spd_fireball_impact_stream, -9.0, "SFX")
+			if _spd_burning_stream != null: _play_external(_spd_burning_stream, -3.0, "SFX", randf_range(0.9, 1.1))
+			play_filtered_noise(0.3, 0.12, 3000, 6000, pan, "highpass")
 		"melee":
 			play_noise(0.07, 0.25, 1400, pan)
 			play_tone(180, 90, 0.12, "square", 0.15, pan)
@@ -407,9 +419,30 @@ func play_sfx(key: String, pan: float = 0.0) -> void:
 			play_noise(0.12, 0.3, 5000, pan)
 			play_tone(2200, 200, 0.18, "sawtooth", 0.18, pan)
 		"heal":
-			play_tone(520, null, 0.14, "sine", 0.15, pan)
-			play_tone(660, null, 0.16, "sine", 0.15, pan, 0.1)
-			play_tone(780, null, 0.2, "sine", 0.15, pan, 0.2)
+			# Pedido do usuário: sonoplastia mais divina/santa/abençoada/lírica
+			# pra cura — arpejo ascendente de tríade maior (Sol-Si-Ré) em sine
+			# puro (sem harmônicos ásperos, "limpo" como um sino de cristal),
+			# cada nota reforçada por uma sombra bem baixinha uma oitava abaixo
+			# (corpo/reverb artificial) e fechado por um brilho agudo sustentado.
+			var heal_notes := [[783.99, 0.00], [987.77, 0.10], [1174.66, 0.20]]
+			for note in heal_notes:
+				play_tone(note[0], null, 0.55, "sine", 0.16, pan, note[1])
+				play_tone(note[0] * 0.5, null, 0.65, "sine", 0.05, pan, note[1])
+			play_tone(1567.98, null, 0.9, "sine", 0.08, pan, 0.24)
+		"resurrectChime":
+			# Pedido do usuário: Ressurreição ganha sonoplastia própria, mais
+			# grandiosa que a Cura — arpejo ascendente de quase 2 oitavas (Sol
+			# maior) terminando num acorde sustentado de Ré maior, como um
+			# coro/sino celestial "chegando". Sine puro do início ao fim.
+			var res_arpeggio := [
+				[392.00, 0.00], [493.88, 0.14], [587.33, 0.28], [783.99, 0.42],
+				[987.77, 0.60], [1174.66, 0.78],
+			]
+			for note in res_arpeggio:
+				play_tone(note[0], null, 0.65, "sine", 0.15, pan, note[1])
+			var res_chord := [1174.66, 1479.98, 1760.00, 2349.32]
+			for freq in res_chord:
+				play_tone(freq, null, 1.6, "sine", 0.10, pan, 1.00)
 		"poison":
 			play_tone(260, 130, 0.3, "triangle", 0.15, pan)
 		"nature":

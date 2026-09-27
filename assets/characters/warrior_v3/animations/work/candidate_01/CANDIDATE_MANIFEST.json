@@ -1,0 +1,58 @@
+{
+  "CombatIdle": {
+    "source": "Sword_Idle",
+    "duration": 1.6666666666666667,
+    "loop": true,
+    "status": "UNAPPROVED_RETARGET_BASE",
+    "impact_time": null,
+    "modifications": []
+  },
+  "Walk": {
+    "source": "Walk_Loop",
+    "duration": 1.3333333333333333,
+    "loop": true,
+    "status": "UNAPPROVED_RETARGET_BASE",
+    "impact_time": null,
+    "modifications": []
+  },
+  "Attack_Slash": {
+    "source": "Sword_Attack",
+    "duration": 1.5333333333333334,
+    "loop": false,
+    "status": "UNAPPROVED_RETARGET_BASE",
+    "impact_time": null,
+    "modifications": []
+  },
+  "Attack_Chop": {
+    "source": "Sword_Attack",
+    "duration": 1.5333333333333334,
+    "loop": false,
+    "status": "UNAPPROVED_RETARGET_BASE",
+    "impact_time": null,
+    "modifications": []
+  },
+  "Shield_Bash": {
+    "source": "Punch_Cross",
+    "duration": 1.0,
+    "loop": false,
+    "status": "UNAPPROVED_RETARGET_BASE",
+    "impact_time": null,
+    "modifications": []
+  },
+  "Hit": {
+    "source": "Hit_Chest",
+    "duration": 0.3333333333333333,
+    "loop": false,
+    "status": "UNAPPROVED_RETARGET_BASE",
+    "impact_time": null,
+    "modifications": []
+  },
+  "Death": {
+    "source": "Death01",
+    "duration": 2.4,
+    "loop": false,
+    "status": "UNAPPROVED_RETARGET_BASE",
+    "impact_time": null,
+    "modifications": []
+  }
+}

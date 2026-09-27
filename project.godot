@@ -17,16 +17,18 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 [autoload]
 
 AudioEngine="*res://autoload/audio_engine.gd"
+OnlineEndpoint="*res://online/online_endpoint.gd"
+
+[online]
+
+production=false
+server_url="ws://127.0.0.1:9080"
 
 [display]
 
 window/size/viewport_width=920
 window/size/viewport_height=1200
 window/stretch/mode="canvas_items"
-
-[editor_plugins]
-
-enabled=PackedStringArray("res://addons/gut/plugin.cfg")
 
 [rendering]
 
