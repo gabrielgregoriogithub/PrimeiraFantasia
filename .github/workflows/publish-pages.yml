@@ -18,9 +18,13 @@ name: Publish Web build to GitHub Pages
 on:
   push:
     branches: [main]
-  release:
-    types: [published]
   workflow_dispatch:
+  # Sem gatilho "release: published": o ambiente github-pages tem uma regra
+  # de proteção que só permite deploy vindo da branch main, e o evento de
+  # release dispara com a ref da tag (ex.: refs/tags/web-build), que é
+  # rejeitada ("Tag ... is not allowed to deploy to github-pages due to
+  # environment protection rules"). Depois de subir uma release nova, dispare
+  # o deploy com um push em main (ou "Run workflow" manual).
 
 permissions:
   contents: read
