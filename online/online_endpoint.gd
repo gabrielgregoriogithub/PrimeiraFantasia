@@ -220,6 +220,7 @@ func _start_room(room: String) -> void:
 	var state := GameState.new()
 	state.rng.seed = abs(hash(room))
 	state.apply_pvp_scenario(definition, by_slot[1]["heroes"], by_slot[2]["monsters"])
+	state.begin_turn_for(state.advance_ct_until_ready())
 	data["state"] = state
 	data["started"] = true
 	var snapshot := _snapshot(state)
@@ -382,7 +383,9 @@ func _broadcast_lobby(room: String) -> void:
 	for player in data["players"].values(): players.append({"slot": player["slot"], "connected": player["connected"], "ready": player["ready"]})
 	for peer in data["players"]: _send_to(peer, {"type": "lobby", "room": room, "players": players, "started": data["started"]})
 
-func _send_to(peer_id: int, payload: Dictionary) -> void: _message.rpc_id(peer_id, payload)
+func _send_to(peer_id: int, payload: Dictionary) -> void:
+	if not multiplayer.get_peers().has(peer_id): return
+	_message.rpc_id(peer_id, payload)
 func _reject(peer_id: int, reason: String) -> void: _send_to(peer_id, {"type": "action_rejected", "reason": reason})
 
 func _snapshot(state: GameState) -> Dictionary:
