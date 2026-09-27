@@ -1,8 +1,25 @@
-name: Export and publish Godot Web build
+name: Publish Web build to GitHub Pages
+
+# O Godot headless (--editor --quit/--quit-after) não importa nenhum asset
+# binário (PNG/MP3) no runner do GitHub Actions — sai com exit 0 e 0
+# arquivos importados, sem nenhum erro, mesmo dando minutos de processamento
+# e testando várias combinações de --display-driver/--rendering-driver.
+# Localmente (mesma versão do Godot, mesmo projeto) o export funciona
+# perfeitamente. Enquanto a causa exata dessa diferença não é encontrada,
+# publicamos o build gerado localmente: ele é enviado como assets de uma
+# release chamada "web-build" (veja README da release) e este workflow só
+# baixa esses arquivos prontos e publica no Pages — sem rodar o Godot aqui.
+#
+# Para atualizar o site depois de mudar assets/cenas: exporte localmente
+# (Godot > Project > Export > Web) e suba os arquivos exportados (index.*)
+# como assets da release "web-build", substituindo os antigos. Este
+# workflow roda de novo sozinho a cada push em main.
 
 on:
   push:
     branches: [main]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -15,85 +32,30 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GODOT_VERSION: 4.7.2
-  GODOT_RELEASE: 4.7.2-stable
-  GODOT_TEMPLATES_VERSION: 4.7.2.stable
-  GODOT_PROJECT: PrimeiraFantasia
+  WEB_BUILD_TAG: web-build
+  WEB_BUILD_FILES: >-
+    index.html index.js index.pck index.wasm index.png index.icon.png
+    index.apple-touch-icon.png index.audio.worklet.js
+    index.audio.position.worklet.js
 
 jobs:
-  export:
-    name: Export Godot Web
+  fetch:
+    name: Fetch pre-built Web export
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Godot and Web export templates
+      - name: Download release assets
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/godot" "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATES_VERSION}"
-
-          curl --fail --location --retry 3 \
-            "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_linux.x86_64.zip" \
-            --output "$RUNNER_TEMP/godot/godot.zip"
-          unzip -q "$RUNNER_TEMP/godot/godot.zip" -d "$RUNNER_TEMP/godot"
-          chmod +x "$RUNNER_TEMP/godot/Godot_v${GODOT_RELEASE}_linux.x86_64"
-          ln -s "$RUNNER_TEMP/godot/Godot_v${GODOT_RELEASE}_linux.x86_64" "$RUNNER_TEMP/godot/godot"
-          echo "$RUNNER_TEMP/godot" >> "$GITHUB_PATH"
-
-          curl --fail --location --retry 3 \
-            "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_export_templates.tpz" \
-            --output "$RUNNER_TEMP/godot/templates.tpz"
-          unzip -p "$RUNNER_TEMP/godot/templates.tpz" templates/web_nothreads_debug.zip \
-            > "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATES_VERSION}/web_nothreads_debug.zip"
-          unzip -p "$RUNNER_TEMP/godot/templates.tpz" templates/web_nothreads_release.zip \
-            > "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATES_VERSION}/web_nothreads_release.zip"
-
-          "$RUNNER_TEMP/godot/godot" --version
-          test -s "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATES_VERSION}/web_nothreads_debug.zip"
-          test -s "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATES_VERSION}/web_nothreads_release.zip"
-
-      - name: Import project
-        # Confirmado pelo log verbose: com `--quit` puro, o editor abre a
-        # cena principal (run/main_scene), tenta carregar texturas que ainda
-        # não foram importadas (fresh checkout, sem .godot/imported ainda),
-        # e sai antes da fila de reimportação em segundo plano rodar de
-        # verdade — resultado: exit 0, mas 0 arquivos importados. Trocado
-        # `--quit` por `--quit-after N`, que só sai depois de N quadros,
-        # dando tempo real pra fila de import processar o projeto inteiro
-        # (~2700 recursos). Duas passadas por segurança.
-        run: |
-          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit-after 4000 --display-driver headless --rendering-driver dummy
-          e1=$?
-          n1=$(find "$GITHUB_WORKSPACE/.godot/imported" -type f 2>/dev/null | wc -l)
-          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit-after 4000 --display-driver headless --rendering-driver dummy
-          e2=$?
-          n2=$(find "$GITHUB_WORKSPACE/.godot/imported" -type f 2>/dev/null | wc -l)
-          nsrc=$(find "$GITHUB_WORKSPACE/assets" -type f | wc -l)
-          echo "::notice::import pass1 exit=$e1 imported=$n1 | pass2 exit=$e2 imported=$n2 | arquivos fonte em assets/=$nsrc"
-
-      - name: Export Web build to a temporary directory
-        shell: bash
-        run: |
-          set -euo pipefail
-          export_dir="$RUNNER_TEMP/${GODOT_PROJECT}-web"
-          rm -rf "$export_dir"
-          mkdir -p "$export_dir"
-          godot --headless --path "$GITHUB_WORKSPACE" --export-release Web "$export_dir/index.html" \
-            --display-driver headless --rendering-driver dummy
-          test -s "$export_dir/index.html"
-          test -s "$export_dir/index.pck"
-          find "$export_dir" -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
-          # Sanity check: um projeto com ~600MB de assets não gera um .pck de
-          # poucos megabytes; se isso acontecer de novo, o import ficou
-          # incompleto (ver comentário no passo "Import project") e é melhor
-          # falhar o build alto e claro do que publicar um jogo quebrado.
-          pck_size=$(stat -c%s "$export_dir/index.pck")
-          if [ "$pck_size" -lt 50000000 ]; then
-            echo "::error::index.pck com apenas $pck_size bytes — import provavelmente incompleto (esperado dezenas/centenas de MB). Abortando o deploy."
-            exit 1
-          fi
+          dir="$RUNNER_TEMP/web"
+          mkdir -p "$dir"
+          base="https://github.com/${{ github.repository }}/releases/download/${WEB_BUILD_TAG}"
+          for f in $WEB_BUILD_FILES; do
+            curl -fL --retry 3 --retry-delay 2 "$base/$f" -o "$dir/$f"
+          done
+          test -s "$dir/index.html"
+          test -s "$dir/index.pck"
+          find "$dir" -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -101,11 +63,11 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ${{ runner.temp }}/${{ env.GODOT_PROJECT }}-web
+          path: ${{ runner.temp }}/web
 
   deploy:
     name: Deploy to GitHub Pages
-    needs: export
+    needs: fetch
     runs-on: ubuntu-latest
     environment:
       name: github-pages
