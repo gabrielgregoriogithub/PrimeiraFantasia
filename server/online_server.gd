@@ -8,6 +8,8 @@ func _initialize() -> void:
 	# quadro depois, nesta inicialização via --script).
 	await process_frame
 	var port := 9080
+	var env_port := OS.get_environment("PORT")
+	if not env_port.is_empty(): port = int(env_port) # hospedagens (Render/Fly/Railway) informam a porta por variável de ambiente
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--port="): port = int(arg.trim_prefix("--port="))
 	# O autoload OnlineEndpoint já foi criado pelo project.godot; o servidor
