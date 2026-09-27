@@ -8,18 +8,23 @@
 
 FROM debian:bookworm-slim
 
-ARG GODOT_VERSION=4.7.2
 ARG GODOT_RELEASE=4.7.2-stable
 
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends curl unzip ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
 
-RUN curl -fL "https://downloads.godotengine.org/${GODOT_VERSION}/Godot_v${GODOT_RELEASE}_linux.x86_64.zip" -o /tmp/godot.zip \
-	&& unzip -q /tmp/godot.zip -d /opt/godot \
-	&& chmod +x "/opt/godot/Godot_v${GODOT_RELEASE}_linux.x86_64" \
-	&& ln -s "/opt/godot/Godot_v${GODOT_RELEASE}_linux.x86_64" /usr/local/bin/godot \
-	&& rm /tmp/godot.zip
+# downloads.godotengine.org às vezes devolve a página de download (HTML) em
+# vez do .zip para downloads automatizados fora do GitHub Actions; os
+# releases do GitHub servem o binário de verdade de forma estável.
+RUN set -eu; \
+	url="https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_linux.x86_64.zip"; \
+	curl -fSL --retry 5 --retry-delay 3 --retry-connrefused "$url" -o /tmp/godot.zip; \
+	test -s /tmp/godot.zip; \
+	unzip -q /tmp/godot.zip -d /opt/godot; \
+	chmod +x "/opt/godot/Godot_v${GODOT_RELEASE}_linux.x86_64"; \
+	ln -s "/opt/godot/Godot_v${GODOT_RELEASE}_linux.x86_64" /usr/local/bin/godot; \
+	rm /tmp/godot.zip
 
 WORKDIR /app
 COPY project.godot ./project.godot
