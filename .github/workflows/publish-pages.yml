@@ -50,7 +50,7 @@ jobs:
           unzip -p "$RUNNER_TEMP/godot/templates.tpz" templates/web_nothreads_release.zip \
             > "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATES_VERSION}/web_nothreads_release.zip"
 
-          godot --version
+          "$RUNNER_TEMP/godot/godot" --version
           test -s "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATES_VERSION}/web_nothreads_debug.zip"
           test -s "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATES_VERSION}/web_nothreads_release.zip"
 
