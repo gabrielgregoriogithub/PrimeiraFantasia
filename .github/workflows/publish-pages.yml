@@ -55,7 +55,16 @@ jobs:
           test -s "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATES_VERSION}/web_nothreads_release.zip"
 
       - name: Import project
-        run: godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless --audio-driver Dummy
+        # Um projeto com ~600MB de assets não termina de importar (texturas,
+        # áudio) numa única passada do editor headless antes do --quit sair;
+        # o resultado é um .pck minúsculo com quase tudo faltando (visto na
+        # prática: 7,5MB em vez de ~300MB). Repetir o import converge para o
+        # estado completo, exatamente como o workaround documentado pela
+        # comunidade Godot para esse mesmo problema em CI.
+        run: |
+          for i in 1 2 3 4; do
+            godot --headless --path "$GITHUB_WORKSPACE" --editor --quit-after 2000 --display-driver headless --audio-driver Dummy
+          done
 
       - name: Export Web build to a temporary directory
         shell: bash
@@ -69,6 +78,15 @@ jobs:
           test -s "$export_dir/index.html"
           test -s "$export_dir/index.pck"
           find "$export_dir" -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+          # Sanity check: um projeto com ~600MB de assets não gera um .pck de
+          # poucos megabytes; se isso acontecer de novo, o import ficou
+          # incompleto (ver comentário no passo "Import project") e é melhor
+          # falhar o build alto e claro do que publicar um jogo quebrado.
+          pck_size=$(stat -c%s "$export_dir/index.pck")
+          if [ "$pck_size" -lt 50000000 ]; then
+            echo "::error::index.pck com apenas $pck_size bytes — import provavelmente incompleto (esperado dezenas/centenas de MB). Abortando o deploy."
+            exit 1
+          fi
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
