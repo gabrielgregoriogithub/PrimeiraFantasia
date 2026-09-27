@@ -21,8 +21,8 @@ OnlineEndpoint="*res://online/online_endpoint.gd"
 
 [online]
 
-production=false
-server_url="ws://127.0.0.1:9080"
+production=true
+server_url="wss://primeirafantasia.onrender.com"
 
 [display]
 
