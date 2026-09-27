@@ -1,0 +1,89 @@
+name: Export and publish Godot Web build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7.2
+  GODOT_RELEASE: 4.7.2-stable
+  GODOT_PROJECT: PrimeiraFantasia
+
+jobs:
+  export:
+    name: Export Godot Web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Godot and Web export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/godot" "$HOME/.local/share/godot/export_templates/${GODOT_RELEASE}"
+
+          curl --fail --location --retry 3 \
+            "https://downloads.godotengine.org/${GODOT_VERSION}/Godot_v${GODOT_RELEASE}_linux.x86_64.zip" \
+            --output "$RUNNER_TEMP/godot/godot.zip"
+          unzip -q "$RUNNER_TEMP/godot/godot.zip" -d "$RUNNER_TEMP/godot"
+          chmod +x "$RUNNER_TEMP/godot/Godot_v${GODOT_RELEASE}_linux.x86_64"
+          echo "$RUNNER_TEMP/godot" >> "$GITHUB_PATH"
+
+          curl --fail --location --retry 3 \
+            "https://downloads.godotengine.org/${GODOT_VERSION}/Godot_v${GODOT_RELEASE}_export_templates.tpz" \
+            --output "$RUNNER_TEMP/godot/templates.tpz"
+          unzip -p "$RUNNER_TEMP/godot/templates.tpz" templates/web_nothreads_debug.zip \
+            > "$HOME/.local/share/godot/export_templates/${GODOT_RELEASE}/web_nothreads_debug.zip"
+          unzip -p "$RUNNER_TEMP/godot/templates.tpz" templates/web_nothreads_release.zip \
+            > "$HOME/.local/share/godot/export_templates/${GODOT_RELEASE}/web_nothreads_release.zip"
+
+          godot --version
+          test -s "$HOME/.local/share/godot/export_templates/${GODOT_RELEASE}/web_nothreads_debug.zip"
+          test -s "$HOME/.local/share/godot/export_templates/${GODOT_RELEASE}/web_nothreads_release.zip"
+
+      - name: Import project
+        run: godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless --audio-driver Dummy
+
+      - name: Export Web build to a temporary directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          export_dir="$RUNNER_TEMP/${GODOT_PROJECT}-web"
+          rm -rf "$export_dir"
+          mkdir -p "$export_dir"
+          godot --headless --path "$GITHUB_WORKSPACE" --export-release Web "$export_dir/index.html" \
+            --display-driver headless --audio-driver Dummy
+          test -s "$export_dir/index.html"
+          test -s "$export_dir/index.pck"
+          find "$export_dir" -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/${{ env.GODOT_PROJECT }}-web
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: export
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v4
