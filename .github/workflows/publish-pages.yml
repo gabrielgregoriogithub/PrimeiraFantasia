@@ -55,18 +55,18 @@ jobs:
           test -s "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATES_VERSION}/web_nothreads_release.zip"
 
       - name: Import project
-        # `--audio-driver Dummy` faz o importador de MP3 do Godot 4.7.2
-        # segfaultar no meio da importação headless (reproduzido localmente:
-        # trava sempre logo ao reimportar o primeiro .mp3). O resultado era
-        # um .pck publicado com só 7,5MB em vez de ~300MB, quase tudo
-        # faltando. Sem essa flag (o `--headless` já basta) uma única
-        # passada importa o projeto inteiro sem crash. Duas passadas por
-        # segurança, caso alguma cena dependa de outra importada na 1ª.
+        # `--display-driver headless` só tira a janela; sem GPU/X no runner,
+        # o Godot ainda tenta abrir um contexto de renderização real (GL
+        # Compatibility, conforme project.godot) pra gerar os previews de
+        # import, falha ao criá-lo e a importação vira um no-op silencioso
+        # (confirmado: exit=0, 0 arquivos importados, sem nenhum erro).
+        # `--rendering-driver dummy` força um backend de renderização falso
+        # que não depende de GPU nenhuma, então a importação roda de verdade.
         run: |
-          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless
+          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless --rendering-driver dummy
           e1=$?
           n1=$(find "$GITHUB_WORKSPACE/.godot/imported" -type f 2>/dev/null | wc -l)
-          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless
+          godot --headless --path "$GITHUB_WORKSPACE" --editor --quit --display-driver headless --rendering-driver dummy
           e2=$?
           n2=$(find "$GITHUB_WORKSPACE/.godot/imported" -type f 2>/dev/null | wc -l)
           nsrc=$(find "$GITHUB_WORKSPACE/assets" -type f | wc -l)
@@ -80,7 +80,7 @@ jobs:
           rm -rf "$export_dir"
           mkdir -p "$export_dir"
           godot --headless --path "$GITHUB_WORKSPACE" --export-release Web "$export_dir/index.html" \
-            --display-driver headless
+            --display-driver headless --rendering-driver dummy
           test -s "$export_dir/index.html"
           test -s "$export_dir/index.pck"
           find "$export_dir" -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
