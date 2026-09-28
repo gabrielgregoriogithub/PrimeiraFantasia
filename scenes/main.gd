@@ -1,6 +1,9 @@
 extends Node2D
 
 const ART_DIRECTION := preload("res://data/art_direction_config.gd")
+## O Web não tem fonte de sistema para emoji (ícones de status, habilidades,
+## menus): sem este fallback eles somem no navegador.
+const EMOJI_FONT := preload("res://assets/fonts/NotoColorEmoji.ttf")
 
 ## Composição da cena jogável (Fase 6): instancia um GameState, desenha o
 ## tabuleiro/tokens e liga clique do jogador + turnos automáticos da IA na
@@ -226,6 +229,7 @@ var _party_selection_hidden_for_info := false
 ## sequência toda roda aqui dentro, o sinal `finished` dispara no momento
 ## exato em que acaba (não precisa mais estimar uma duração fixa).
 func _ready() -> void:
+	_install_emoji_fallback()
 	scenario_manager = ScenarioManager.new()
 	add_child(scenario_manager)
 	# Redimensionar a janela muda quanto do mapa cabe na tela (ver
@@ -252,6 +256,13 @@ func _ready() -> void:
 		return
 	_load_campaign_progress()
 	_show_boot_flow()
+
+func _install_emoji_fallback() -> void:
+	var default_font := ThemeDB.fallback_font
+	if default_font.fallbacks.has(EMOJI_FONT): return
+	var fallbacks := default_font.fallbacks.duplicate()
+	fallbacks.append(EMOJI_FONT)
+	default_font.fallbacks = fallbacks
 
 func _is_running_under_gut() -> bool:
 	for arg in OS.get_cmdline_args():
@@ -300,10 +311,31 @@ func _show_main_menu() -> void:
 		_show_online_lobby(mode)
 	)
 
+## Online (pedido do usuário): primeiro monta o time (e o cenário, para quem
+## cria a sala) e só depois cria/entra/procura a sala.
 func _show_online_lobby(mode: String) -> void:
+	var room_from_link := OnlineConfig.room_from_url()
+	mode = OnlineLobby.resolve_mode(mode, room_from_link)
 	_online_lobby_layer = CanvasLayer.new()
 	_online_lobby_layer.layer = 100
 	add_child(_online_lobby_layer)
+	var team_select := OnlineTeamSelect.new()
+	_online_lobby_layer.add_child(team_select)
+	team_select.begin_online(mode == "create")
+	team_select.cancelled.connect(func():
+		_online_lobby_layer.queue_free()
+		_online_lobby_layer = null
+		_show_main_menu()
+	)
+	team_select.team_confirmed.connect(func(team: Array, scenario_id: String):
+		team_select.queue_free()
+		_show_online_room(mode, room_from_link, team, scenario_id)
+	)
+	if not OnlineEndpoint.snapshot_received.is_connected(_on_online_snapshot_message):
+		OnlineEndpoint.snapshot_received.connect(_on_online_snapshot_message)
+		OnlineEndpoint.action_rejected.connect(func(reason): _show_scenario_banner("ONLINE: %s" % reason))
+
+func _show_online_room(mode: String, room_from_link: String, team: Array, scenario_id: String) -> void:
 	var lobby := OnlineLobby.new()
 	_online_lobby_layer.add_child(lobby)
 	lobby.closed.connect(func():
@@ -316,9 +348,7 @@ func _show_online_lobby(mode: String) -> void:
 		_online_lobby_layer = null
 		_start_online_battle(payload)
 	)
-	lobby.begin(mode, OnlineConfig.room_from_url())
-	OnlineEndpoint.snapshot_received.connect(_on_online_snapshot)
-	OnlineEndpoint.action_rejected.connect(func(reason): _show_scenario_banner("ONLINE: %s" % reason))
+	lobby.begin(mode, room_from_link, team, scenario_id)
 
 func _start_online_battle(payload: Dictionary) -> void:
 	_online_mode = true
@@ -331,15 +361,27 @@ func _start_online_battle(payload: Dictionary) -> void:
 	_start_new_game()
 	_on_online_snapshot(payload.get("snapshot", {}))
 
+## O sinal entrega a mensagem inteira ({"type": "snapshot", "snapshot": {...}}).
+func _on_online_snapshot_message(payload: Dictionary) -> void:
+	_on_online_snapshot(payload.get("snapshot", {}))
+
 func _on_online_snapshot(snapshot: Dictionary) -> void:
 	if not _online_mode or state == null or snapshot.is_empty(): return
-	var by_name := {}
-	for remote_unit in snapshot.get("units", []): by_name[String(remote_unit.get("name", ""))] = remote_unit
-	for local_unit in state.units:
-		var remote = by_name.get(String(local_unit.get("name", "")), null)
-		if remote != null:
-			local_unit.clear()
-			local_unit.merge(remote, true)
+	# A lista vem inteira do servidor: invocações novas entram e unidades
+	# removidas saem. Dicionários já existentes são reaproveitados porque os
+	# tokens guardam referência a eles.
+	var local_by_name := {}
+	for local_unit in state.units: local_by_name[String(local_unit.get("name", ""))] = local_unit
+	var synced_units: Array = []
+	for remote_unit in snapshot.get("units", []):
+		var local_unit = local_by_name.get(String(remote_unit.get("name", "")), null)
+		if local_unit == null:
+			synced_units.append(remote_unit.duplicate(true))
+			continue
+		local_unit.clear()
+		local_unit.merge(remote_unit, true)
+		synced_units.append(local_unit)
+	state.units = synced_units
 	state.terrain_map = snapshot.get("terrain_map", {}).duplicate(true)
 	state.structures = snapshot.get("structures", []).duplicate(true)
 	state.elevation_map = snapshot.get("elevation_map", {}).duplicate(true)
@@ -353,7 +395,14 @@ func _on_online_snapshot(snapshot: Dictionary) -> void:
 	state.last_action_vfx = snapshot.get("last_action_vfx", {}).duplicate(true)
 	var actor_name := String(snapshot.get("current_actor", ""))
 	state.current_actor = state.units.filter(func(u): return String(u.get("name", "")) == actor_name)[0] if state.units.any(func(u): return String(u.get("name", "")) == actor_name) else null
+	mode = "idle"
+	_compute_current_targets()
 	_sync_visuals()
+	# O servidor não encerra o turno sozinho: quando a unidade já moveu e agiu,
+	# o jogador escolhe a direção de fim de turno (igual ao modo local).
+	var actor = state.current_actor
+	if actor != null and not state.battle_ended and _team_is_human(actor["team"]) and not _facing_panel.visible 			and (actor.get("hasMoved", false) or state.is_rooted(actor)) and actor.get("hasActed", false):
+		_end_current_turn()
 
 ## Etapa 1 do Modo PVP (pedido do usuário): heróis primeiro, no MESMO quadro
 ## "5 de 6" com retrato e "Ver personagem" já usado nos andares 3º/4º da
@@ -510,6 +559,9 @@ func _start_new_game() -> void:
 ## de campanha (bardo_unlocked/campaign_bardo_unlocked) — só navega de volta,
 ## não reseta progresso.
 func _return_to_main_menu() -> void:
+	if _online_mode:
+		_online_mode = false
+		OnlineEndpoint.disconnect_from_server()
 	_pvp_mode_active = false
 	_active_pvp_battle = null
 	selected_party_keys = []
@@ -1906,6 +1958,9 @@ func _end_current_turn() -> void:
 		return
 	var u: Dictionary = state.current_actor
 	if _online_mode:
+		if u["hp"] > 0 and _team_is_human(u["team"]) and not _unit_uses_3d_visual(u) and _has_directional_art(u):
+			_open_facing_picker(u)
+			return
 		OnlineEndpoint.send_action({"action": "end_turn", "actor": u["name"]})
 		return
 	if u["hp"] <= 0 or not _team_is_human(u["team"]):
@@ -1946,6 +2001,12 @@ func _open_facing_picker(u: Dictionary) -> void:
 
 func _on_facing_confirm_pressed() -> void:
 	_facing_panel.visible = false
+	if _online_mode and not _facing_pending_unit.is_empty():
+		var unit := _facing_pending_unit
+		var facing: Dictionary = unit.get("facing", {"dx": 0, "dy": 1})
+		OnlineEndpoint.send_action({"action": "facing", "actor": unit["name"], "x": int(unit["x"]) + int(facing["dx"]), "y": int(unit["y"]) + int(facing["dy"])})
+		_facing_pending_unit = {}
+		return
 	if not _facing_pending_unit.is_empty():
 		var facing_mount = state.mount_of(_facing_pending_unit)
 		if facing_mount != null: facing_mount["facing"] = (_facing_pending_unit["facing"] as Dictionary).duplicate()
@@ -4107,6 +4168,10 @@ func _after_action() -> void:
 ## acabar) — cobre os dois lados, então também é o que faz a IA assumir na
 ## hora quando um time vira IA pelo botão da HUD (ver _on_toggle_control_pressed).
 func _run_ai_until_player_turn() -> void:
+	# Online: os turnos do adversário são jogados por ele e chegam como
+	# snapshot do servidor — a IA local não pode agir por nenhum time.
+	if _online_mode:
+		return
 	if battle_presentation != null and battle_presentation.is_blocking_input():
 		return
 	if _ai_sequence_running:

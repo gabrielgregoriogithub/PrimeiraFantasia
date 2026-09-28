@@ -257,55 +257,79 @@ const PVP_MONSTER_STAT_OVERRIDES := {
 ## Reaproveita _apply_scenario_spawns (mesma logica de "campo aberto ao redor
 ## do ultimo spawn" que os cenarios ja usam pra elencos maiores que os spawns
 ## nomeados no mapa) pra posicionar os dois times nos spawns do cenario.
+## hero_keys joga como "player" e monster_keys como "enemy". No online cada
+## lado pode misturar heróis e monstros de qualquer grupo; no PVP local os
+## lados continuam sendo só heróis x só monstros.
 func apply_pvp_scenario(definition: Dictionary, hero_keys: Array, monster_keys: Array) -> void:
 	pvp_custom_battle = true
 	apply_scenario(definition)
 	clear_units()
 	var templates := Units.build()
-	for key in hero_keys:
-		var hero: Dictionary = (templates[key] as Dictionary).duplicate(true)
-		units.append(hero)
-		units_by_key[key] = hero
+	var player_side: Array = []
+	for i in hero_keys.size():
+		player_side.append(_add_pvp_unit(String(hero_keys[i]), i + 1, "player", templates))
+	var enemy_side: Array = []
 	for i in monster_keys.size():
-		var key: String = monster_keys[i]
-		var spawned: Dictionary
-		if key in PVP_DUNGEON_MONSTER_KINDS:
-			spawned = _spawn_dungeon_enemy(key, i + 1, {"x": 0, "y": 0})
-		elif key in PVP_LUA_MONSTER_KINDS:
-			spawned = _spawn_lua_monster(key, i + 1, {"x": 0, "y": 0})
-		elif key in PVP_GUARDIAN_MONSTER_KINDS:
-			spawned = _spawn_guardian_monster(key, i + 1, {"x": 0, "y": 0})
-		else:
-			var monster: Dictionary = (templates[key] as Dictionary).duplicate(true)
-			units.append(monster)
-			units_by_key[key] = monster
-			spawned = monster
-		if PVP_MONSTER_STAT_OVERRIDES.has(key) and not spawned.is_empty():
-			for stat_key in PVP_MONSTER_STAT_OVERRIDES[key]:
-				spawned[stat_key] = PVP_MONSTER_STAT_OVERRIDES[key][stat_key]
-		if key in ["rat", "snake", "gnoll", "slime"] and not spawned.is_empty():
-			_add_creature_ranged_attack(spawned, key)
-		# Pedido do usuário: sem numeração ("Vampiro 1", "Zumbi 2"...) no
-		# nome dos inimigos do PVP — o sufixo só existe em
-		# dungeon_monster_data/lua_monster_data pra desambiguar várias
-		# cópias do MESMO monstro na campanha (ex.: 2 Fogo Vivo no 3º
-		# Andar). No PVP isso nunca acontece: PvpSetup._toggle_monster
-		# seleciona por chave única, então cada kind entra no máximo 1 vez
-		# — o índice aqui é só a posição no array, não uma contagem de
-		# cópias. Espelha a mesma remoção do " 1" já feita pra ficha de
-		# seleção (ver PvpSetup._monster_template).
-		if not spawned.is_empty() and (key in PVP_DUNGEON_MONSTER_KINDS or key in PVP_LUA_MONSTER_KINDS or key in PVP_GUARDIAN_MONSTER_KINDS):
-			var numbered_name: String = String(spawned["name"])
-			var suffix := " %d" % (i + 1)
-			if numbered_name.ends_with(suffix):
-				units_by_key.erase(numbered_name)
-				spawned["name"] = numbered_name.substr(0, numbered_name.length() - suffix.length())
-				units_by_key[String(spawned["name"])] = spawned
+		enemy_side.append(_add_pvp_unit(String(monster_keys[i]), i + 1, "enemy", templates))
+	_mark_pvp_side_duplicates(player_side.filter(func(u): return not u.is_empty()), enemy_side.filter(func(u): return not u.is_empty()))
 	# O PVP reutiliza somente os tiles seguros definidos pelo cenário, mas
 	# embaralha quem ocupa cada slot para variar a formação a cada partida.
 	# A campanha continua usando a ordem original dessas listas.
 	_apply_scenario_spawns("player", _pvp_spawn_slots("player", definition))
 	_apply_scenario_spawns("enemy", _pvp_spawn_slots("enemy", definition))
+
+## Cria uma unidade do PVP (herói ou monstro, pela chave) já no lado `team`.
+func _add_pvp_unit(key: String, index: int, team: String, templates: Dictionary) -> Dictionary:
+	var spawned: Dictionary
+	if key in PVP_DUNGEON_MONSTER_KINDS:
+		spawned = _spawn_dungeon_enemy(key, index, {"x": 0, "y": 0})
+	elif key in PVP_LUA_MONSTER_KINDS:
+		spawned = _spawn_lua_monster(key, index, {"x": 0, "y": 0})
+	elif key in PVP_GUARDIAN_MONSTER_KINDS:
+		spawned = _spawn_guardian_monster(key, index, {"x": 0, "y": 0})
+	elif templates.has(key):
+		spawned = (templates[key] as Dictionary).duplicate(true)
+		units.append(spawned)
+		units_by_key[key] = spawned
+	if spawned.is_empty():
+		return spawned
+	spawned["team"] = team
+	if PVP_MONSTER_STAT_OVERRIDES.has(key):
+		for stat_key in PVP_MONSTER_STAT_OVERRIDES[key]:
+			spawned[stat_key] = PVP_MONSTER_STAT_OVERRIDES[key][stat_key]
+	if key in ["rat", "snake", "gnoll", "slime"]:
+		_add_creature_ranged_attack(spawned, key)
+	# Pedido do usuário: sem numeração ("Vampiro 1", "Zumbi 2"...) no nome
+	# dos monstros do PVP — o sufixo só desambigua várias cópias do MESMO
+	# monstro na campanha. Aqui cada lado escolhe cada chave no máximo 1 vez.
+	if key in PVP_DUNGEON_MONSTER_KINDS or key in PVP_LUA_MONSTER_KINDS or key in PVP_GUARDIAN_MONSTER_KINDS:
+		var numbered_name: String = String(spawned["name"])
+		var suffix := " %d" % index
+		if numbered_name.ends_with(suffix):
+			units_by_key.erase(numbered_name)
+			spawned["name"] = numbered_name.substr(0, numbered_name.length() - suffix.length())
+			units_by_key[String(spawned["name"])] = spawned
+	return spawned
+
+## Pedido do usuário: o mesmo personagem nos dois lados ganha uma bola azul
+## (lado do criador) e uma vermelha (adversário) no nome. Também mantém os
+## nomes únicos, que o online usa para sincronizar as unidades.
+const PVP_PLAYER_MARKER := " 🔵"
+const PVP_ENEMY_MARKER := " 🔴"
+
+func _mark_pvp_side_duplicates(player_side: Array, enemy_side: Array) -> void:
+	var enemy_names := {}
+	for u in enemy_side: enemy_names[String(u["name"])] = true
+	for u in player_side:
+		var shared := String(u["name"])
+		if not enemy_names.has(shared): continue
+		for other in enemy_side:
+			if String(other["name"]) == shared:
+				other["name"] = shared + PVP_ENEMY_MARKER
+				units_by_key[other["name"]] = other
+		u["name"] = shared + PVP_PLAYER_MARKER
+		units_by_key[u["name"]] = u
+		units_by_key.erase(shared)
 
 ## Copia e embaralha apenas os slots do PVP; as definições dos cenários e os
 ## spawns da campanha permanecem intactos. No Campo, a faixa válida começa na
@@ -1568,21 +1592,18 @@ func footprint_width(u: Dictionary) -> int:
 func footprint_height(u: Dictionary) -> int:
 	return maxi(1, int(u.get("footprintHeight", u.get("footprintSize", 1))))
 
-## Unidade de 4 casas (Troll/Dragão/Salamandra/Goo grande). Ignora props
-## (BoardLayout.LARGE_UNIT_PASSABLE_TERRAIN_TYPES) e nunca fica sobre uma
-## estrutura (Castelo/Montanha) — ver _can_unit_anchor_at.
+## Unidade de 4 casas (Troll/Dragão/Salamandra/Goo grande). O corpo inteiro
+## é barrado por terreno bloqueante e nunca fica sobre uma estrutura
+## (Castelo/Montanha) — ver _can_unit_anchor_at.
 func is_large_unit(u: Dictionary) -> bool:
 	return footprint_width(u) > 1 or footprint_height(u) > 1
 
-## Terreno bloqueante PARA ESTA unidade: igual à lista global, exceto os props
-## que uma unidade grande ignora.
-func _terrain_blocks_unit(u: Dictionary, terrain: Variant) -> bool:
+## Terreno bloqueante PARA ESTA unidade. Pedido do usuário: unidades de 4
+## casas também são obstruídas por props/árvores/tendas (antes ignoravam).
+func _terrain_blocks_unit(_u: Dictionary, terrain: Variant) -> bool:
 	if terrain == null:
 		return false
-	var terrain_type: String = terrain.get("type", "")
-	if is_large_unit(u) and BoardLayout.LARGE_UNIT_PASSABLE_TERRAIN_TYPES.has(terrain_type):
-		return false
-	return BoardLayout.BLOCKING_TERRAIN_TYPES.has(terrain_type)
+	return BoardLayout.BLOCKING_TERRAIN_TYPES.has(terrain.get("type", ""))
 
 ## Caixa do corpo (limites inclusivos). Corpo 1x1: left == right, top == bottom.
 func _body_box(u: Dictionary) -> Dictionary:

@@ -24,6 +24,7 @@ const SELECTOR_REST_PATH := "res://assets/ui/selector_rest.png"
 const OPTIONS := [
 	{"key": "online_create", "label": "CRIAR PARTIDA ONLINE"},
 	{"key": "online_join", "label": "ENTRAR EM PARTIDA"},
+	{"key": "online_browse", "label": "PROCURAR SALAS"},
 	{"key": "story", "label": "MODO HISTÓRIA"},
 	{"key": "pvp", "label": "MODO PVP"},
 ]
@@ -171,6 +172,7 @@ func _confirm_selection() -> void:
 			"pvp": pvp_selected.emit()
 			"online_create": online_selected.emit("create")
 			"online_join": online_selected.emit("join")
+			"online_browse": online_selected.emit("browse")
 	)
 
 ## Pedido do usuário: a flecha disparada ao confirmar uma opção precisa

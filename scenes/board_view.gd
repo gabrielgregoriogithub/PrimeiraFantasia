@@ -785,10 +785,18 @@ func _update_wind(delta: float) -> void:
 		_wind_change_at = randf_range(2.5, 5.5)
 	wind_strength = lerpf(wind_strength, _wind_target, clampf(delta * 0.6, 0.0, 1.0))
 
+## Animação ambiente do tabuleiro (vento, almas, ondulações) não precisa de
+## 60 redesenhos por segundo: o _draw() percorre o mapa inteiro em GDScript e,
+## no navegador, isso sozinho derrubava o FPS. Transições de destaque seguem
+## redesenhando a cada quadro para ficarem suaves.
+const AMBIENT_REDRAW_INTERVAL := 1.0 / 30.0
+var _ambient_redraw_clock := 0.0
+
 func _process(delta: float) -> void:
 	if state == null: return
 	_update_wind(delta)
 	_soul_phase = fmod(_soul_phase + delta * 2.2, TAU)
+	var highlight_animating := _highlight_fading or _highlight_progress < 1.0
 	if _highlight_fading:
 		_highlight_progress = maxf(0.0, _highlight_progress - delta / 0.14)
 		if _highlight_progress <= 0.0:
@@ -804,7 +812,10 @@ func _process(delta: float) -> void:
 		_update_lua_ripples(delta)
 	elif scenario_definition.get("id", ScenarioManager.FIELD) == ScenarioManager.VILLAGE:
 		_update_village_fish_jump()
-	queue_redraw()
+	_ambient_redraw_clock += delta
+	if highlight_animating or _ambient_redraw_clock >= AMBIENT_REDRAW_INTERVAL:
+		_ambient_redraw_clock = 0.0
+		queue_redraw()
 
 ## Evento exclusivamente visual. Retorna pontos próximos para a camada de
 ## partículas reagir sem consultar nem modificar regras de terreno.

@@ -74,13 +74,6 @@ const FLOWER_LAYOUT := [
 ## qualquer risco de interferir no cenário existente.
 const BLOCKING_TERRAIN_TYPES := ["scenery-wall", "scenery-prop", "tree", "tent", "tower-wall", "tower-pillar", "tower-bookshelf", "tower-vase", "lua-mountain", "village-building", "porto-water", "porto-pier", "porto-blocked", "desfiladeiro-blocked", "estrada-inverno-cliff", "estrada-inverno-blocked"]
 
-## Props que uma unidade de 4 casas (footprint 2x2: Troll/Dragão/Salamandra/
-## Goo grande) ignora: atravessa e pode parar em cima. Morro ("lua-mountain",
-## "estrada-inverno-cliff"), parede/pilar, prédio, rocha e água do Porto NÃO
-## entram aqui — continuam barrando esse tipo de unidade (e Castelo/Montanha,
-## que são estruturas, ver GameState._can_unit_anchor_at).
-const LARGE_UNIT_PASSABLE_TERRAIN_TYPES := ["scenery-prop", "tree", "tent", "tower-bookshelf", "tower-vase"]
-
 const TREE_ART_VARIANTS := ["tree1.png", "tree2.png", "tree3.png", "tree4.png", "tree5.png"]
 const TENT_ART_VARIANTS := ["tent1.png", "tent2.png"]
 

@@ -10,8 +10,8 @@ extends RefCounted
 ## desenhado:
 ##
 ## - solid "wall": bloqueia todo mundo (muros, portões, cripta, ruínas).
-## - solid "prop": bloqueia unidades de 1 casa; unidades de 4 casas ignoram
-##   (mesma regra das árvores, ver BoardLayout.LARGE_UNIT_PASSABLE_TERRAIN_TYPES).
+## - solid "prop": bloqueia todas as unidades, inclusive as de 4 casas
+##   (mesma regra das árvores).
 ## - solid "": só visual (velas, ossos, arbustos, folhas, pedras pequenas...).
 ## - layer "y": nó ordenado por Y (personagem passa na frente/atrás).
 ## - layer "flat": decalque no chão, desenhado dentro do BoardView (fica

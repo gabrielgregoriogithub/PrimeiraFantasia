@@ -6,11 +6,13 @@ signal match_started(payload: Dictionary)
 signal snapshot_received(payload: Dictionary)
 signal action_rejected(reason: String)
 signal server_error(reason: String)
+signal room_list_received(rooms: Array)
 
 const PROTOCOL_VERSION := 1
 var _server_mode := false
 var _socket: WebSocketMultiplayerPeer
 var _room_code := ""
+var _team: Array = []
 var _slot := 0
 var _connected := false
 var _pending_messages: Array[Dictionary] = []
@@ -21,8 +23,19 @@ func _ready() -> void:
 		multiplayer.peer_connected.connect(_on_peer_connected)
 		multiplayer.server_disconnected.connect(_on_server_disconnected)
 
+## Quadros por segundo do processo servidor: sem limite, o Godot headless gira
+## o loop o mais rápido possível (~30% de um núcleo parado) e, na CPU mínima
+## do plano grátis do Render, fica estrangulado e atrasa cada jogada.
+const SERVER_MAX_FPS := 30
+
 func start_server(port: int = 9080) -> Error:
 	_server_mode = true
+	Engine.max_fps = SERVER_MAX_FPS
+	OS.low_processor_usage_mode = true
+	# O autoload de áudio sintetiza a música a cada quadro — inútil (e caro)
+	# num servidor sem ninguém ouvindo.
+	var audio := get_node_or_null("/root/AudioEngine")
+	if audio != null: audio.process_mode = Node.PROCESS_MODE_DISABLED
 	_socket = WebSocketMultiplayerPeer.new()
 	var err := _socket.create_server(port)
 	if err != OK:
@@ -44,18 +57,41 @@ func connect_to_server(url: String = OnlineConfig.server_url()) -> Error:
 	connection_changed.emit(false, "Conectando ao servidor…")
 	return OK
 
-func create_room() -> void:
-	_send({"type": "create_room", "protocol": PROTOCOL_VERSION})
+## O time (5 chaves) é montado antes de criar/entrar numa sala; a partida
+## começa sozinha assim que o segundo jogador entra.
+func create_room(team: Array, scenario_id: String) -> void:
+	_team = team.duplicate()
+	_send({"type": "create_room", "team": _team, "scenario": scenario_id, "protocol": PROTOCOL_VERSION})
 
-func join_room(code: String) -> void:
+func join_room(code: String, team: Array = []) -> void:
 	_room_code = code.strip_edges().to_upper()
-	_send({"type": "join_room", "room": _room_code, "protocol": PROTOCOL_VERSION})
+	if not team.is_empty(): _team = team.duplicate()
+	# Sem conexão ainda: _on_peer_connected envia o join_room ao conectar.
+	# Enfileirar aqui também geraria um segundo join recusado pelo servidor.
+	if not _connected: return
+	_send(_join_payload())
 
-func submit_roster(hero_keys: Array, monster_keys: Array = [], scenario_id: String = "field") -> void:
-	_send({"type": "roster", "room": _room_code, "heroes": hero_keys, "monsters": monster_keys, "scenario": scenario_id})
+## Entra na primeira sala que estiver esperando adversário.
+func join_any(team: Array) -> void:
+	_team = team.duplicate()
+	_send({"type": "join_any", "team": _team, "protocol": PROTOCOL_VERSION})
 
-func set_ready(ready: bool) -> void:
-	_send({"type": "ready", "room": _room_code, "ready": ready})
+func list_rooms() -> void:
+	_send({"type": "list_rooms"})
+
+## Sai do online (botão Voltar): fecha a conexão sem reconectar sozinho, o que
+## faz o servidor liberar a sala que ainda esperava adversário.
+func disconnect_from_server() -> void:
+	_server_url = ""
+	_room_code = ""
+	_slot = 0
+	_connected = false
+	_pending_messages.clear()
+	if _socket != null: _socket.close()
+	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
+
+func _join_payload() -> Dictionary:
+	return {"type": "join_room", "room": _room_code, "team": _team, "protocol": PROTOCOL_VERSION}
 
 func send_action(action: Dictionary) -> void:
 	var command := action.duplicate(true)
@@ -88,7 +124,22 @@ func _message(payload: Dictionary) -> void:
 	if _server_mode:
 		_server_message(multiplayer.get_remote_sender_id(), payload)
 		return
-	_client_message(payload)
+	_client_message(_unpack_message(payload))
+
+## Snapshots completos passam de 50 KB; comprimidos ficam ~6x menores, o que
+## reduz bastante o tempo de cada jogada numa conexão com o servidor distante.
+const COMPRESS_MIN_BYTES := 2048
+
+func _pack_message(payload: Dictionary) -> Dictionary:
+	var raw := var_to_bytes(payload)
+	if raw.size() < COMPRESS_MIN_BYTES: return payload
+	return {"z": raw.compress(FileAccess.COMPRESSION_DEFLATE), "n": raw.size()}
+
+func _unpack_message(payload: Dictionary) -> Dictionary:
+	if not payload.has("z"): return payload
+	var raw: PackedByteArray = payload["z"].decompress(int(payload.get("n", 0)), FileAccess.COMPRESSION_DEFLATE)
+	var restored = bytes_to_var(raw)
+	return restored if restored is Dictionary else {}
 
 func _on_peer_connected(peer_id: int) -> void:
 	if peer_id == 1:
@@ -96,7 +147,7 @@ func _on_peer_connected(peer_id: int) -> void:
 		connection_changed.emit(true, "Conectado ao servidor.")
 		_send({"type": "hello", "protocol": PROTOCOL_VERSION})
 		if not _room_code.is_empty():
-			_send({"type": "join_room", "room": _room_code, "protocol": PROTOCOL_VERSION})
+			_send(_join_payload())
 		for pending in _pending_messages:
 			_message.rpc_id(1, pending)
 		_pending_messages.clear()
@@ -116,6 +167,7 @@ func _client_message(payload: Dictionary) -> void:
 			_slot = int(payload.get("slot", 0))
 			lobby_updated.emit(payload)
 		"lobby": lobby_updated.emit(payload)
+		"room_list": room_list_received.emit(payload.get("rooms", []))
 		"match_started": match_started.emit(payload)
 		"snapshot": snapshot_received.emit(payload)
 		"action_rejected": action_rejected.emit(String(payload.get("reason", "Ação recusada.")))
@@ -133,22 +185,28 @@ func _on_server_peer_connected(peer_id: int) -> void:
 
 func _on_server_peer_disconnected(peer_id: int) -> void:
 	var room := String(_peer_rooms.get(peer_id, ""))
+	_peer_rooms.erase(peer_id)
 	if room.is_empty() or not _rooms.has(room):
 		return
 	var data: Dictionary = _rooms[room]
 	if data["players"].has(peer_id):
 		data["players"][peer_id]["connected"] = false
 		data["players"][peer_id]["disconnected_at"] = Time.get_ticks_msec()
+	# Sala sem ninguém conectado não serve mais para ninguém (nem aparece na
+	# lista): libera a memória do servidor.
+	if not data["players"].values().any(func(p): return p["connected"]):
+		_rooms.erase(room)
+		return
 	_broadcast_lobby(room)
 
 func _server_message(peer_id: int, payload: Dictionary) -> void:
 	match String(payload.get("type", "")):
 		"hello":
 			_send_to(peer_id, {"type": "hello_ack", "protocol": PROTOCOL_VERSION})
-		"create_room": _server_create_room(peer_id)
-		"join_room": _server_join_room(peer_id, String(payload.get("room", "")))
-		"roster": _server_roster(peer_id, payload)
-		"ready": _server_ready(peer_id, bool(payload.get("ready", false)))
+		"create_room": _server_create_room(peer_id, payload.get("team", []), String(payload.get("scenario", "")))
+		"join_room": _server_join_room(peer_id, String(payload.get("room", "")), payload.get("team", []))
+		"join_any": _server_join_any(peer_id, payload.get("team", []))
+		"list_rooms": _send_to(peer_id, {"type": "room_list", "rooms": _open_rooms()})
 		"action": _server_action(peer_id, payload)
 
 func _ensure_scenario_manager() -> ScenarioManager:
@@ -157,75 +215,88 @@ func _ensure_scenario_manager() -> ScenarioManager:
 		add_child(_scenario_manager)
 	return _scenario_manager
 
-func _server_create_room(peer_id: int) -> void:
+func _server_create_room(peer_id: int, team: Variant, scenario_id: String) -> void:
+	if not OnlineConfig.is_valid_team(team):
+		_send_to(peer_id, {"type": "error", "reason": "Escolha exatamente 5 personagens válidos."}); return
+	if not OnlineConfig.is_valid_scenario(scenario_id):
+		_send_to(peer_id, {"type": "error", "reason": "Cenário inválido."}); return
 	var code := _new_room_code()
 	var players := {}
-	players[peer_id] = {"slot": 1, "connected": true, "ready": false, "heroes": Units.player_team_keys().slice(0, 5), "monsters": [], "scenario": ScenarioManager.FIELD, "disconnected_at": 0}
-	_rooms[code] = {"players": players, "state": null, "started": false}
+	players[peer_id] = {"slot": 1, "connected": true, "team": (team as Array).duplicate(), "disconnected_at": 0}
+	_rooms[code] = {"players": players, "scenario": scenario_id, "state": null, "started": false}
 	_peer_rooms[peer_id] = code
 	_send_to(peer_id, {"type": "room_created", "room": code, "slot": 1})
 	_broadcast_lobby(code)
 
-func _server_join_room(peer_id: int, code: String) -> void:
+func _server_join_room(peer_id: int, code: String, team: Variant) -> void:
 	code = code.strip_edges().to_upper()
 	if not _rooms.has(code):
 		_send_to(peer_id, {"type": "error", "reason": "Sala não encontrada ou expirada."})
 		return
 	var data: Dictionary = _rooms[code]
-	var reclaimed_slot := 0
-	var reclaimed_peer := 0
-	if data["players"].size() >= 2:
-		for old_peer in data["players"]:
-			if not data["players"][old_peer]["connected"]:
-				reclaimed_slot = int(data["players"][old_peer]["slot"])
-				reclaimed_peer = old_peer
-				break
-		if reclaimed_slot == 0:
-			_send_to(peer_id, {"type": "error", "reason": "Esta sala já tem dois jogadores."})
-			return
-		data["players"].erase(reclaimed_peer)
-	var slot := reclaimed_slot if reclaimed_slot > 0 else 2
-	data["players"][peer_id] = {"slot": slot, "connected": true, "ready": false, "heroes": Units.player_team_keys().slice(0, 5) if slot == 1 else [], "monsters": [] if slot == 1 else Units.enemy_team_keys().slice(0, 5), "scenario": ScenarioManager.FIELD, "disconnected_at": 0}
+	# Reconexão: devolve o slot (e o time) de quem caiu, inclusive no meio da
+	# partida. Antes de começar, só o criador tem slot a recuperar.
+	for old_peer in data["players"].keys():
+		var old_player: Dictionary = data["players"][old_peer]
+		if old_player["connected"] or old_peer == peer_id: continue
+		if not data["started"] and data["players"].size() < 2 and int(old_player["slot"]) != 1: continue
+		data["players"].erase(old_peer)
+		old_player["connected"] = true
+		data["players"][peer_id] = old_player
+		_peer_rooms[peer_id] = code
+		_send_to(peer_id, {"type": "room_joined", "room": code, "slot": old_player["slot"]})
+		if data["started"]: _send_match_started(code, peer_id)
+		else: _broadcast_lobby(code)
+		return
+	if data["started"] or data["players"].size() >= 2:
+		_send_to(peer_id, {"type": "error", "reason": "Esta sala já tem dois jogadores."})
+		return
+	if not OnlineConfig.is_valid_team(team):
+		_send_to(peer_id, {"type": "error", "reason": "Escolha exatamente 5 personagens válidos."})
+		return
+	data["players"][peer_id] = {"slot": 2, "connected": true, "team": (team as Array).duplicate(), "disconnected_at": 0}
 	_peer_rooms[peer_id] = code
-	_send_to(peer_id, {"type": "room_joined", "room": code, "slot": slot})
+	_send_to(peer_id, {"type": "room_joined", "room": code, "slot": 2})
 	_broadcast_lobby(code)
+	_start_room(code)
 
-func _server_roster(peer_id: int, payload: Dictionary) -> void:
-	var room := String(_peer_rooms.get(peer_id, ""))
-	if room.is_empty() or not _rooms.has(room): return
-	var player: Dictionary = _rooms[room]["players"].get(peer_id, {})
-	if player.is_empty(): return
-	if not payload.get("heroes", []).is_empty(): player["heroes"] = payload["heroes"].duplicate()
-	if not payload.get("monsters", []).is_empty(): player["monsters"] = payload["monsters"].duplicate()
-	player["scenario"] = String(payload.get("scenario", player.get("scenario", ScenarioManager.FIELD)))
-	_broadcast_lobby(room)
+func _server_join_any(peer_id: int, team: Variant) -> void:
+	var rooms := _open_rooms()
+	if rooms.is_empty():
+		_send_to(peer_id, {"type": "error", "reason": "Nenhuma sala esperando adversário no momento."})
+		return
+	_server_join_room(peer_id, String(rooms[0]["room"]), team)
 
-func _server_ready(peer_id: int, ready: bool) -> void:
-	var room := String(_peer_rooms.get(peer_id, ""))
-	if room.is_empty() or not _rooms.has(room): return
-	var player: Dictionary = _rooms[room]["players"].get(peer_id, {})
-	if player.is_empty(): return
-	player["ready"] = ready
-	_broadcast_lobby(room)
-	var players: Dictionary = _rooms[room]["players"]
-	if players.size() == 2 and players.values().all(func(p): return p["ready"]):
-		_start_room(room)
+## Salas que ainda esperam o segundo jogador, com o criador conectado — mais
+## antigas primeiro (a ordem de criação é a ordem do Dictionary).
+func _open_rooms() -> Array:
+	var open := []
+	for code in _rooms:
+		var data: Dictionary = _rooms[code]
+		if data["started"] or data["players"].size() != 1: continue
+		var creator: Dictionary = data["players"].values()[0]
+		if not creator["connected"]: continue
+		open.append({"room": code, "scenario": data["scenario"], "team": creator["team"]})
+	return open
 
 func _start_room(room: String) -> void:
 	var data: Dictionary = _rooms[room]
 	var by_slot := {}
 	for player in data["players"].values(): by_slot[player["slot"]] = player
-	var scenario_id := String(by_slot[1].get("scenario", ScenarioManager.FIELD))
-	var definition := ScenarioManager.definition(scenario_id)
 	var state := GameState.new()
 	state.rng.seed = abs(hash(room))
-	state.apply_pvp_scenario(definition, by_slot[1]["heroes"], by_slot[2]["monsters"])
+	state.apply_pvp_scenario(ScenarioManager.definition(String(data["scenario"])), by_slot[1]["team"], by_slot[2]["team"])
 	state.begin_turn_for(state.advance_ct_until_ready())
 	data["state"] = state
 	data["started"] = true
-	var snapshot := _snapshot(state)
 	for peer_id in data["players"]:
-		_send_to(peer_id, {"type": "match_started", "room": room, "slot": data["players"][peer_id]["slot"], "scenario": scenario_id, "heroes": by_slot[1]["heroes"], "monsters": by_slot[2]["monsters"], "snapshot": snapshot})
+		_send_match_started(room, peer_id)
+
+func _send_match_started(room: String, peer_id: int) -> void:
+	var data: Dictionary = _rooms[room]
+	var by_slot := {}
+	for player in data["players"].values(): by_slot[player["slot"]] = player
+	_send_to(peer_id, {"type": "match_started", "room": room, "slot": data["players"][peer_id]["slot"], "scenario": data["scenario"], "heroes": by_slot[1]["team"], "monsters": by_slot[2]["team"], "snapshot": _snapshot(data["state"])})
 
 func _server_action(peer_id: int, payload: Dictionary) -> void:
 	var room := String(_peer_rooms.get(peer_id, ""))
@@ -241,10 +312,12 @@ func _server_action(peer_id: int, payload: Dictionary) -> void:
 	var ok := _resolve_action(state, payload)
 	if not ok:
 		_reject(peer_id, "Ação inválida ou não suportada neste estado."); return
-	if state.check_battle_outcome(): pass
-	else:
-		var owner: Dictionary = state.current_actor
-		if owner != null and (owner.get("hasMoved", false) or state.is_rooted(owner)) and owner.get("hasActed", false):
+	# Mover+agir não encerra o turno aqui: o cliente ainda escolhe a direção
+	# de fim de turno e envia "facing" (ou "end_turn"). Só um ator que morreu
+	# na própria ação (ex.: contra-ataque) passa a vez automaticamente.
+	if not state.check_battle_outcome():
+		var owner = state.current_actor
+		if owner != null and int(owner.get("hp", 0)) <= 0:
 			state.advance_to_next_turn()
 	for peer in data["players"]: _send_to(peer, {"type": "snapshot", "snapshot": _snapshot(state)})
 
@@ -380,12 +453,12 @@ func _new_room_code() -> String:
 func _broadcast_lobby(room: String) -> void:
 	var data: Dictionary = _rooms[room]
 	var players := []
-	for player in data["players"].values(): players.append({"slot": player["slot"], "connected": player["connected"], "ready": player["ready"]})
+	for player in data["players"].values(): players.append({"slot": player["slot"], "connected": player["connected"]})
 	for peer in data["players"]: _send_to(peer, {"type": "lobby", "room": room, "players": players, "started": data["started"]})
 
 func _send_to(peer_id: int, payload: Dictionary) -> void:
 	if not multiplayer.get_peers().has(peer_id): return
-	_message.rpc_id(peer_id, payload)
+	_message.rpc_id(peer_id, _pack_message(payload))
 func _reject(peer_id: int, reason: String) -> void: _send_to(peer_id, {"type": "action_rejected", "reason": reason})
 
 func _snapshot(state: GameState) -> Dictionary:
