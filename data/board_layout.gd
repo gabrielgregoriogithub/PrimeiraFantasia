@@ -74,6 +74,15 @@ const FLOWER_LAYOUT := [
 ## qualquer risco de interferir no cenário existente.
 const BLOCKING_TERRAIN_TYPES := ["scenery-wall", "scenery-prop", "tree", "tent", "tower-wall", "tower-pillar", "tower-bookshelf", "tower-vase", "lua-mountain", "village-building", "porto-water", "porto-pier", "porto-blocked", "desfiladeiro-blocked", "estrada-inverno-cliff", "estrada-inverno-blocked"]
 
+## Props/assets do cenário que uma unidade de 4 casas (footprint 2x2: Troll/
+## Dragão/Salamandra/Goo grande) ignora: atravessa e pode parar em cima
+## (pedido do usuário) — inclui as casas da Vila e casas/fonte/obstáculos do
+## Porto. Obstáculos avulsos do Desfiladeiro/Estrada Inverno dividem o type
+## com céu/penhasco, então são marcados tile a tile com "prop": true (ver
+## GameState.is_prop_terrain). Parede/pilar da Torre, morro, penhasco, céu,
+## água/píer e Castelo/Montanha NÃO são ignorados.
+const LARGE_UNIT_PASSABLE_TERRAIN_TYPES := ["scenery-prop", "tree", "tent", "tower-bookshelf", "tower-vase", "village-building", "porto-blocked"]
+
 const TREE_ART_VARIANTS := ["tree1.png", "tree2.png", "tree3.png", "tree4.png", "tree5.png"]
 const TENT_ART_VARIANTS := ["tent1.png", "tent2.png"]
 

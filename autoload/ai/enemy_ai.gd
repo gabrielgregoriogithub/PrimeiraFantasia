@@ -27,8 +27,10 @@ static func _find_weapon(gs: GameState, u: Dictionary, predicate: Callable) -> V
 ## critério de progresso pro fallback de movimento da IA em vez de distância
 ## Manhattan em linha reta, que não enxerga paredes: um monstro só com saída
 ## por um corredor/escada específico pode ter Manhattan MENOR ficando parado
-## contra a parede errada do que desviando até o corredor certo.
-static func _walkable_path_distance_map(gs: GameState, target_x: int, target_y: int) -> Dictionary:
+## contra a parede errada do que desviando até o corredor certo. Com `u`,
+## usa o bloqueio de terreno DESSA unidade (unidade 2x2 atravessa props, ver
+## GameState._terrain_blocks_unit).
+static func _walkable_path_distance_map(gs: GameState, target_x: int, target_y: int, u: Dictionary = {}) -> Dictionary:
 	var dist := {}
 	var start_key := gs.tile_key(target_x, target_y)
 	dist[start_key] = 0
@@ -47,7 +49,7 @@ static func _walkable_path_distance_map(gs: GameState, target_x: int, target_y: 
 			if dist.has(nk):
 				continue
 			var terrain = gs.terrain_at(nx, ny)
-			if gs._terrain_blocks_transit(terrain):
+			if gs._terrain_blocks_transit(terrain, u):
 				continue
 			dist[nk] = cur_dist + 1
 			queue.append({"x": nx, "y": ny})
@@ -967,7 +969,7 @@ static func enemy_act(gs: GameState, u: Dictionary) -> void:
 			# desviando até a escada (que a princípio AUMENTA a distância em
 			# linha reta), então nunca saía do lugar. BFS mede o desvio como
 			# progresso de verdade.
-			var path_dist := _walkable_path_distance_map(gs, target["x"], target["y"])
+			var path_dist := _walkable_path_distance_map(gs, target["x"], target["y"], u)
 			var start_key := gs.tile_key(u["x"], u["y"])
 			var best_dist: int = int(path_dist.get(start_key, gs.manhattan(u, target)))
 			for t in reachable:

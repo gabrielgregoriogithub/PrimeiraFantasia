@@ -433,6 +433,17 @@ static func _lua_valley_definition() -> Dictionary:
 		"player_spawns":player_spawns,
 		"music":"res://assets/third_party/shattered_pixel_dungeon/music/prison_1.ogg","step_sfx":"grassStep"}
 
+## Obstáculos avulsos de 1 casa (pedra, barril, poço...) do Desfiladeiro/
+## Estrada Inverno — viram terreno com "prop": true, que unidades 2x2
+## ignoram (ver BoardLayout.LARGE_UNIT_PASSABLE_TERRAIN_TYPES). Entradas com
+## "w"/"h" são prédios de várias casas, fora da lista.
+static func _prop_tiles(obstacles: Array) -> Array:
+	var result: Array = []
+	for obstacle in obstacles:
+		if not obstacle.has("w"):
+			result.append({"x":obstacle["x"],"y":obstacle["y"]})
+	return result
+
 ## PORTO — vila portuária costeira (cenário independente, pedido do usuário,
 ## inspirado na composição de `cenario1.png`: casa grande + praça de pedra +
 ## fonte central + margem de água, SEM copiar pixel a pixel). Tabuleiro
@@ -665,7 +676,7 @@ static func _desfiladeiro_definition() -> Dictionary:
 	for tile in sky: blocked.append({"x":tile["x"],"y":tile["y"]})
 	return {
 		"id":DESFILADEIRO,"name":"DESFILADEIRO","indoor":false,
-		"chasm":chasm,"bridge":bridge,"trees":trees,"sky":sky,"blocked_tiles":blocked,
+		"chasm":chasm,"bridge":bridge,"trees":trees,"sky":sky,"blocked_tiles":blocked,"prop_tiles":_prop_tiles(obstacles),
 		"decorations":[
 			# Arbustos secos na neve, puramente decorativos (recortes reais da
 			# referência do usuário) — não bloqueiam.
@@ -767,7 +778,7 @@ static func _estrada_inverno_definition() -> Dictionary:
 	return {
 		"id":ESTRADA_INVERNO,"name":"ESTRADA INVERNO","indoor":false,
 		"water":water,"cliff":cliff,"stairs":stairs,"trail":trail,"trees":trees,
-		"blocked_tiles":blocked,
+		"blocked_tiles":blocked,"prop_tiles":_prop_tiles(obstacles),
 		"decorations":[
 			# Pedrinhas soltas, puramente decorativas.
 			{"x":5,"y":3,"kind":"estrada-inverno-rock-3","decorative":true,"blocking":false},

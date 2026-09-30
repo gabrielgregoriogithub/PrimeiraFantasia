@@ -1078,6 +1078,7 @@ func _setup_desfiladeiro(definition: Dictionary) -> void:
 		var key := tile_key(tile["x"],tile["y"])
 		if not terrain_map.has(key):
 			terrain_map[key] = {"type":"desfiladeiro-blocked"}
+	_mark_prop_tiles(definition, "desfiladeiro-blocked")
 	var templates := Units.build()
 	var hero: Dictionary = (templates["guerreiro"] as Dictionary).duplicate(true)
 	var spawn: Dictionary = definition["player_spawns"][0]
@@ -1184,6 +1185,7 @@ func _setup_estrada_inverno(definition: Dictionary) -> void:
 		# fonte de verdade de "isto bloqueia" e vence terreno andável.
 		if not terrain_map.has(key) or terrain_map[key].get("walkable", false):
 			terrain_map[key] = {"type":"estrada-inverno-blocked"}
+	_mark_prop_tiles(definition, "estrada-inverno-blocked")
 	var templates := Units.build()
 	var hero: Dictionary = (templates["guerreiro"] as Dictionary).duplicate(true)
 	var spawn: Dictionary = definition["player_spawns"][0]
@@ -1199,6 +1201,15 @@ func _setup_estrada_inverno(definition: Dictionary) -> void:
 		goblin["facing"] = {"dx":-1,"dy":0}
 		units.append(goblin)
 		units_by_key["goblin_1"] = goblin
+
+## Marca os obstáculos avulsos do cenário ("prop_tiles", ver
+## ScenarioManager._prop_tiles) como prop — só onde o tile de fato virou
+## `blocked_type`, pra nunca transformar prédio/penhasco/água num prop.
+func _mark_prop_tiles(definition: Dictionary, blocked_type: String) -> void:
+	for tile in definition.get("prop_tiles", []):
+		var terrain = terrain_at(int(tile["x"]), int(tile["y"]))
+		if terrain != null and terrain.get("type", "") == blocked_type:
+			terrain["prop"] = true
 
 ## TEMPLO / CEMITÉRIO (ver HauntedScenery): terreno sólido vem de
 ## "blocked_tiles" (cada um com o próprio type: "scenery-wall" bloqueia todo
@@ -1593,15 +1604,25 @@ func footprint_height(u: Dictionary) -> int:
 	return maxi(1, int(u.get("footprintHeight", u.get("footprintSize", 1))))
 
 ## Unidade de 4 casas (Troll/Dragão/Salamandra/Goo grande). O corpo inteiro
-## é barrado por terreno bloqueante e nunca fica sobre uma estrutura
-## (Castelo/Montanha) — ver _can_unit_anchor_at.
+## é barrado por terreno bloqueante (menos props, ver _terrain_blocks_unit) e
+## nunca fica sobre uma estrutura (Castelo/Montanha) — ver _can_unit_anchor_at.
 func is_large_unit(u: Dictionary) -> bool:
 	return footprint_width(u) > 1 or footprint_height(u) > 1
 
-## Terreno bloqueante PARA ESTA unidade. Pedido do usuário: unidades de 4
-## casas também são obstruídas por props/árvores/tendas (antes ignoravam).
-func _terrain_blocks_unit(_u: Dictionary, terrain: Variant) -> bool:
+## Prop do cenário (árvore, tenda, estante, barril, pedra avulsa...) — ver
+## BoardLayout.LARGE_UNIT_PASSABLE_TERRAIN_TYPES.
+func is_prop_terrain(terrain: Variant) -> bool:
 	if terrain == null:
+		return false
+	return terrain.get("prop", false) or BoardLayout.LARGE_UNIT_PASSABLE_TERRAIN_TYPES.has(terrain.get("type", ""))
+
+## Terreno bloqueante PARA ESTA unidade. Pedido do usuário: unidades de 4
+## casas ignoram props (atravessam e param em cima); os demais continuam
+## obstruídos por eles.
+func _terrain_blocks_unit(u: Dictionary, terrain: Variant) -> bool:
+	if terrain == null:
+		return false
+	if is_large_unit(u) and is_prop_terrain(terrain):
 		return false
 	return BoardLayout.BLOCKING_TERRAIN_TYPES.has(terrain.get("type", ""))
 
@@ -1792,8 +1813,9 @@ func compute_reachable(u: Dictionary) -> Array:
 		# Casa/Castelo/Montanha: "pode parar, não atravessa" — currentDist>0
 		# obrigatório, senão uma unidade que JÁ começou o turno ali ficaria
 		# presa, incapaz de sair.
+		# Unidade 2x2 ignora a casa (asset do cenário) e atravessa.
 		var terrain_here = terrain_at(cx, cy)
-		if current_dist > 0 and terrain_here != null and terrain_here["type"] == "house":
+		if current_dist > 0 and terrain_here != null and terrain_here["type"] == "house" and not is_large_unit(u):
 			continue
 		var structure_here = structure_at(cx, cy)
 		if current_dist > 0 and structure_here != null:
@@ -4150,11 +4172,13 @@ func has_line_of_sight(from_x: int, from_y: int, to_x: int, to_y: int) -> bool:
 
 ## Acha o primeiro tile OCUPADO no caminho reto até target_tile (pra ataques
 ## que exigem linha limpa); se nada bloquear, o impacto acontece no próprio
-## target_tile.
+## target_tile. Props não obstruem; as casas do próprio corpo (2x2) também não.
 func resolve_obstructed_target(caster: Dictionary, target_tile: Dictionary) -> Dictionary:
 	var path: Array = bresenham_line(caster["x"], caster["y"], target_tile["x"], target_tile["y"])
 	path = path.slice(1)
 	for tile in path:
+		if unit_contains_tile(caster, tile["x"], tile["y"]):
+			continue
 		var blocker = unit_at(tile["x"], tile["y"])
 		var is_final: bool = tile["x"] == target_tile["x"] and tile["y"] == target_tile["y"]
 		if blocker != null or is_final:
@@ -5921,7 +5945,7 @@ func perform_ranged_attack_with_obstruction(caster: Dictionary, target: Dictiona
 # --- Fase 4: heurísticas de IA (game.js:9783-10030) -------------------------
 
 # --- IA dos inimigos e de herois controlados pela IA (heuristicas de alvo/magia e o turno da IA). (ver autoload/ai/enemy_ai.gd) ---
-func _walkable_path_distance_map(target_x: int, target_y: int) -> Dictionary: return EnemyAI._walkable_path_distance_map(self, target_x, target_y)
+func _walkable_path_distance_map(target_x: int, target_y: int, u: Dictionary = {}) -> Dictionary: return EnemyAI._walkable_path_distance_map(self, target_x, target_y, u)
 func pick_nearest_target(u: Dictionary) -> Variant: return EnemyAI.pick_nearest_target(self, u)
 func pick_weapon_for_distance(weapons: Array, distance: int, target) -> Variant: return EnemyAI.pick_weapon_for_distance(self, weapons, distance, target)
 func pick_best_heal_aoe_spot(caster: Dictionary, spell: Dictionary) -> Variant: return EnemyAI.pick_best_heal_aoe_spot(self, caster, spell)
