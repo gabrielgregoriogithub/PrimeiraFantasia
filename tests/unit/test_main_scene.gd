@@ -27,6 +27,16 @@ func before_each() -> void:
 		main_scene._start_new_game()
 		await wait_process_frames(1)
 
+## Espera o turno de abertura da IA (e os timers de impacto/câmera que ele
+## agenda) terminar — testes de câmera/efeitos medem o próprio efeito, não
+## o que a IA estiver apresentando em segundo plano.
+func _settle_opening_ai() -> void:
+	var waited := 0.0
+	while main_scene._ai_sequence_running and waited < 30.0:
+		await wait_seconds(0.1)
+		waited += 0.1
+	await wait_seconds(0.8)
+
 func test_fireball_vfx_has_composite_nodes_and_cleans_itself_after_impact() -> void:
 	var fireball = FIREBALL_VFX_TEST_SCENE.instantiate()
 	add_child_autofree(fireball)
@@ -111,14 +121,17 @@ func test_field_structure_occupants_render_above_castle_and_mountain_assets() ->
 		assert_gt(token.z_index, prop.z_index, "%s deve ficar visivel acima da estrutura" % unit["name"])
 
 func test_environment_reaction_presets_affect_props_water_projectiles_and_corpses_only_visually() -> void:
-	await wait_process_frames(2)
+	await _settle_opening_ai()
 	var tree = main_scene.board_view._environment_props.filter(func(prop): return prop.kind == "tree")[0]
-	var before: int = main_scene.effects_layer.get_child_count()
+	# Só efeitos NOVOS (por instância) — transitórios do começo da batalha
+	# (ex.: Uivo de Caça) somem nesse meio-tempo e derrubavam o total.
+	var before_ids := {}
+	for child in main_scene.effects_layer.get_children(): before_ids[child.get_instance_id()] = true
 	main_scene.effects_layer.emit_environment_reaction("explosion", tree.position + Vector2(-40, 0), Vector2.RIGHT, "heavy", "fire")
 	await wait_seconds(0.09)
 	assert_false(is_zero_approx(tree.rotation), "árvore inclina na direção oposta ao impacto")
 	assert_false(main_scene.board_view._grass_reactions.is_empty(), "shockwave visual alcança a grama")
-	assert_gt(main_scene.effects_layer.get_child_count(), before, "reação usa orçamento limitado de folhas")
+	assert_gt(main_scene.effects_layer.get_children().filter(func(child): return not before_ids.has(child.get_instance_id())).size(), 0, "reação usa orçamento limitado de folhas")
 	main_scene.effects_layer.visual_quality = "low"
 	assert_eq(main_scene.effects_layer.IMPACT_INTENSITY.size(), 5, "presets LIGHT/MEDIUM/HEAVY/SIGNATURE/EPIC permanecem configuráveis")
 	var projectile: Node2D = main_scene.effects_layer.spawn_projectile_visual(Vector2(40, 40), Vector2(220, 220), Color.WHITE, 0.12, Callable(), 8.0, "arrow", "straight")
@@ -337,6 +350,7 @@ func test_hit_reaction_recoils_away_without_changing_logical_position() -> void:
 	assert_almost_eq(token._visual_root.position.x, 0.0, 0.2)
 
 func test_camera_shake_uses_attack_axis_and_returns_to_origin() -> void:
+	await _settle_opening_ai()
 	main_scene.board_view.shake_camera(Vector2.DOWN, 2.0, 0.12, false)
 	await wait_seconds(0.025)
 	assert_gt(absf(main_scene.board_view.camera.offset.y), absf(main_scene.board_view.camera.offset.x))

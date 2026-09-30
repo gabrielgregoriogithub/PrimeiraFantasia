@@ -71,10 +71,10 @@ static func key_for_unit(unit: Dictionary) -> String:
 		"vestruz": return "rogue"
 		"bardo": return "bard"
 		"fada", "fantasma", "fogo_vivo", "tower_ghost", "tower_living_fire": return "fairy"
-		"goblin", "spd_rat", "spd_snake", "spd_slime": return "small_enemy"
+		"goblin", "kobold", "lobo", "spd_rat", "spd_snake", "spd_slime": return "small_enemy"
 		"orc": return "orc"
 		"xama": return "shaman"
-		"troll", "spd_gnoll", "spd_goo", "dragon": return "heavy_enemy"
+		"troll", "troncus", "spd_gnoll", "spd_goo", "dragon": return "heavy_enemy"
 		# Pedido do usuário: Demônio das Chamas conjura com cajado/gema, igual
 		# ao Mago — reaproveita o mesmo perfil "mage" (release_style "staff",
 		# cast_style/particle_profile "arcane") em vez de inventar um perfil

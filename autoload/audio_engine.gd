@@ -443,6 +443,15 @@ func play_sfx(key: String, pan: float = 0.0) -> void:
 			var res_chord := [1174.66, 1479.98, 1760.00, 2349.32]
 			for freq in res_chord:
 				play_tone(freq, null, 1.6, "sine", 0.10, pan, 1.00)
+		"wolfHowl":
+			# Uivo de Caça (Lobo): glissando ascendente que sustenta e cai no
+			# fim, duas vozes levemente desafinadas + sopro de ar filtrado.
+			duck_music(4.0, 1.2)
+			play_tone(300, 560, 0.45, "sine", 0.16, pan)
+			play_tone(560, 470, 1.05, "sine", 0.15, pan, 0.42)
+			play_tone(306, 572, 0.45, "triangle", 0.06, pan, 0.02)
+			play_tone(572, 478, 1.05, "triangle", 0.05, pan, 0.44)
+			play_filtered_noise(1.3, 0.035, 900, 1600, pan, "bandpass")
 		"poison":
 			play_tone(260, 130, 0.3, "triangle", 0.15, pan)
 		"nature":

@@ -142,6 +142,70 @@ static func build() -> Dictionary:
 				"sfx": "poison",
 			})
 		),
+		# Pedido do usuário: habilidades do Lobo dos Goblinoides. O pedido
+		# original era CT 0; Bote e Dilacerar encerram a ação, então usam o
+		# custo padrão (mesma decisão tomada com o usuário no Troncus, senão o
+		# Lobo agiria de novo sem passar a vez). Uivo é ação livre (CT 0).
+		# Bote Selvagem reaproveita a Investida do Orc (targetMode "charge"):
+		# linha reta até 3 casas, pára ao lado do alvo; `clearPathOnly` exige
+		# caminho sem obstáculo; `rootsUntilCasterTurn` imobiliza até o início
+		# do próximo turno do Lobo (expira pelo turno DELE, não do alvo).
+		"wolfPounce": {
+			"name": "Bote Selvagem", "icon": "🐾", "kind": "charge", "ctCost": 65, "mpCost": 3,
+			"damageMin": 5, "damageMax": 9, "critMultiplier": 2, "critChance": 0.1, "hitChance": 0.9,
+			"minRange": 1, "maxRange": 3, "targetMode": "charge", "damageType": "physical",
+			"clearPathOnly": true, "rootsUntilCasterTurn": true,
+			"tooltipNote": "Avança até 3 casas em linha reta (caminho livre) e pára ao lado do alvo: 5-9 de dano físico. Se acertar, o alvo fica imobilizado até o início do próximo turno do Lobo (ainda pode atacar e usar habilidades).",
+			"sfx": "melee",
+		},
+		"wolfRend": {
+			"name": "Dilacerar", "icon": "🩸", "kind": "rend", "ctCost": 50, "mpCost": 3,
+			"damageMin": 5, "damageMax": 11, "critMultiplier": 2, "hitChance": 0.8,
+			"minRange": 1, "maxRange": 1, "targetMode": "enemy", "damageType": "physical",
+			"appliesBleed": {"damageMin": 2, "damageMax": 2, "turns": 2, "refresh": true},
+			"tooltipNote": "Corpo a corpo: 5-11 de dano físico e Sangrando (2 de dano por turno, por 2 turnos). Não acumula: reaplicar renova a duração.",
+			"sfx": "melee",
+		},
+		"wolfHuntHowl": {
+			"name": "Uivo de Caça", "icon": "🌕", "kind": "hunt-howl", "ctCost": 0, "mpCost": 4,
+			"speedBonus": 2, "turns": 2, "targetMode": "self",
+			"tooltipNote": "Todos os aliados vivos no campo (inclusive o Lobo), sem limite de distância: +2 de agilidade por 2 turnos. Não acumula com outro uivo; reaplicar renova a duração.",
+			"sfx": "wolfHowl",
+		},
+		# Pedido do usuário: habilidades do Troncus. Raízes reaproveita o modo
+		# "root" da Prisão de Vinhas, mas só em inimigos e renovando a duração
+		# (sem somar turnos). O Enraizado é descontado no fim do turno de quem
+		# sofre, então 2 turnos = preso durante 2 turnos dele.
+		"troncusRoots": {
+			"name": "Raízes Aprisionadoras", "icon": "🌱", "kind": "root", "ctCost": 55, "mpCost": 4,
+			"damageMin": 0, "damageMax": 0, "turns": 2, "critChance": 0, "hitChance": 0.8,
+			"minRange": 1, "maxRange": 3, "targetMode": "root", "enemyOnly": true, "refreshesDuration": true,
+			"tooltipNote": "Um inimigo a até 3 casas: 80% de chance de aplicar Enraizado por 2 turnos (não se move, mas ataca e usa habilidades). Reaplicar renova a duração.",
+			"sfx": "nature",
+		},
+		# Mesma mira/prévia de direção do Tacar Tronco ("cardinal-blast"); pela
+		# regra 2x2, a faixa sai das 2 casas da borda do corpo (4 de largura).
+		"troncusBranchSweep": {
+			"name": "Varredura de Galhos", "icon": "🌳", "kind": "branch-sweep", "ctCost": 60, "mpCost": 5,
+			"damageMin": 4, "damageMax": 7, "critMultiplier": 1, "critChance": 0, "hitChance": 0.85,
+			"minRange": 1, "maxRange": 3, "targetMode": "cardinal-blast", "bandLength": 3, "bandWidth": 3,
+			"damageType": "physical",
+			"tooltipNote": "Escolha uma direção: 4-7 de dano físico a cada inimigo na área de 3 casas à frente (85% de acerto por alvo, 1 golpe por inimigo mesmo ocupando várias casas). Não atinge aliados.",
+			"sfx": "nature",
+		},
+		"troncusBarkArmor": {
+			"name": "Casca Fortificada", "icon": "🪵", "kind": "bark-armor", "ctCost": 0, "mpCost": 3,
+			"turns": 2, "damageReductionPercent": 0.25, "targetMode": "self",
+			"tooltipNote": "Por 2 turnos, recebe 25% menos dano físico. Reaplicar renova a duração, sem acumular.",
+			"sfx": "nature",
+		},
+		"troncusSap": {
+			"name": "Seiva Restauradora", "icon": "💧", "kind": "restoring-sap", "ctCost": 45, "mpCost": 4,
+			"healMin": 5, "healMax": 10, "mpRestoreMin": 1, "mpRestoreMax": 3, "hitChance": 1, "critChance": 0,
+			"minRange": 0, "maxRange": 1, "targetMode": "sap",
+			"tooltipNote": "O próprio Troncus ou um aliado adjacente: recupera 5-10 HP e 1-3 MP (sempre funciona) e remove Envenenado.",
+			"sfx": "heal",
+		},
 		"vinePrison": {
 			"name": "Prisão de Vinhas", "icon": "🌿", "kind": "root", "ctCost": 55, "mpCost": 2,
 			"damageMin": 1, "damageMax": 2, "turns": 2, "critChance": 0, "hitChance": 0.7,
@@ -390,11 +454,11 @@ static func build() -> Dictionary:
 		# vez de queimar, mesmo efeito do Raio de Gelo (weapons.gd:"iceRay").
 		"poisonPotion": {
 			"name": "Poção Venenosa", "kind": "poison-potion", "ctCost": 50, "mpCost": 5,
-			"targetMode": "self", "tooltipNote": "Prepara o próximo ataque de Funda ou Adaga para aplicar Veneno por 3 turnos.", "sfx": "poison",
+			"targetMode": "self", "tooltipNote": "Prepara o próximo ataque de Adaga Envenenada ou Lança para aplicar Veneno por 3 turnos.", "sfx": "poison",
 		},
 		"lowBlow": {
 			"name": "Golpe Baixo", "kind": "low-blow", "ctCost": 50, "mpCost": 2, "damageMin": 1, "damageMax": 1,
-			"targetMode": "self", "tooltipNote": "Próximo ataque de Funda ou Adaga causa dano normal e aplica -20% de acerto.", "sfx": "melee",
+			"targetMode": "self", "tooltipNote": "Próximo ataque de Adaga Envenenada ou Lança causa dano normal e aplica -20% de acerto.", "sfx": "melee",
 		},
 		"sandInEyes": {
 			"name": "Areia nos Olhos", "kind": "sand-in-eyes", "ctCost": 20, "mpCost": 3, "damageMin": 0, "damageMax": 0,
@@ -405,7 +469,7 @@ static func build() -> Dictionary:
 			"tooltipNote": "Após acertar, permite mover novamente ou concede 2 quadrados extras.", "sfx": "melee",
 		},
 		"goblinAmbush": {
-			"name": "Emboscada Goblin", "kind": "power-attack", "ctCost": 10, "mpCost": 2, "damageBonus": 2, "critBonus": 0.1,
+			"name": "Emboscada Kobold", "kind": "power-attack", "ctCost": 10, "mpCost": 2, "damageBonus": 2, "critBonus": 0.1,
 			"targetMode": "self", "tooltipNote": "Próximo ataque: +2 dano e +10% crítico.", "sfx": "melee",
 		},
 		"stolenBarrel": {

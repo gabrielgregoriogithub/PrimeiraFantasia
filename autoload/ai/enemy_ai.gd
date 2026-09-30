@@ -169,6 +169,54 @@ static func pick_best_safe_aoe_direction(gs: GameState, caster: Dictionary, comp
 	return best
 
 
+## Troncus (tanque/controle). Casca Fortificada é ação livre (não encerra o
+## turno); as outras gastam a ação e encerram o turno aqui — devolve true
+## nesse caso. Ordem: Seiva (si/aliado adjacente ferido ou envenenado) >
+## Varredura (2+ inimigos DISTINTOS na faixa) > Raízes (inimigo solto a 2-3
+## casas, pra não fugir/aproximar) > ataque normal com as armas.
+static func _troncus_use_ability(gs: GameState, u: Dictionary) -> bool:
+	var enemies: Array = gs.opposing_team_of(u).filter(func(o): return o["hp"] > 0 and not gs.is_invisible(o) and not o.get("caged", false))
+	var bark = _find_spell(gs, u, func(s): return s.get("kind", "") == "bark-armor")
+	if bark != null and u["mp"] >= bark["mpCost"] and not gs._has_status(u, "barkArmor") and enemies.any(func(o): return gs.manhattan(u, o) <= 3):
+		gs.cast_self_ability(u, bark)
+	var sap = _find_spell(gs, u, func(s): return s.get("kind", "") == "restoring-sap")
+	if sap != null and u["mp"] >= sap["mpCost"]:
+		var candidates: Array = gs.team_units(u["team"]).filter(func(a): return a["hp"] > 0 and (a["name"] == u["name"] or gs.manhattan(u, a) <= int(sap["maxRange"])))
+		candidates = candidates.filter(func(a): return gs._has_status(a, "poison") or float(a["hp"]) / float(a["maxHp"]) < 0.6)
+		candidates.sort_custom(func(a, b): return float(a["hp"]) / float(a["maxHp"]) < float(b["hp"]) / float(b["maxHp"]))
+		if not candidates.is_empty() and gs.cast_restoring_sap(u, candidates[0], sap):
+			gs.advance_to_next_turn()
+			return true
+	var sweep = _find_spell(gs, u, func(s): return s.get("kind", "") == "branch-sweep")
+	if sweep != null and u["mp"] >= sweep["mpCost"]:
+		var best_dir = null
+		var best_count := 1
+		for d in [[1, 0], [-1, 0], [0, 1], [0, -1]]:
+			var probe := gs.body_probe_tile(u, d[0], d[1])
+			if not gs.in_bounds(probe["x"], probe["y"]):
+				continue
+			var tiles: Array = gs.compute_cardinal_rect_tiles(u, probe, sweep["bandLength"], sweep["bandWidth"])
+			var count: int = gs.units_in_tiles(tiles).filter(func(o): return o["team"] != u["team"] and o["hp"] > 0).size()
+			if count > best_count:
+				best_count = count
+				best_dir = probe
+		if best_dir != null:
+			gs.cast_branch_sweep(u, sweep, best_dir)
+			gs.advance_to_next_turn()
+			return true
+	var roots = _find_spell(gs, u, func(s): return s.get("kind", "") == "root")
+	if roots != null and u["mp"] >= roots["mpCost"]:
+		var loose: Array = enemies.filter(func(o):
+			var distance: int = gs.manhattan(u, o)
+			return distance >= 2 and distance <= int(roots["maxRange"]) and not gs.is_rooted(o))
+		loose.sort_custom(func(a, b): return gs.manhattan(u, a) < gs.manhattan(u, b))
+		if not loose.is_empty():
+			gs.cast_root_spell(u, loose[0], roots)
+			gs.advance_to_next_turn()
+			return true
+	return false
+
+
 static func pick_best_cone_direction(gs: GameState, caster: Dictionary, spell: Dictionary) -> Variant:
 	var dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]]
 	var best = null
@@ -501,6 +549,11 @@ static func enemy_act(gs: GameState, u: Dictionary) -> void:
 		var evasive_spell = _find_spell(gs, u, func(s): return s.get("kind") == "evasive")
 		if evasive_spell != null and u["mp"] >= evasive_spell["mpCost"] and not gs._has_status(u, "evasive"):
 			gs.cast_evasive_maneuver(u, evasive_spell)
+		# Uivo de Caça (Lobo): ação livre; vale quando há pelo menos 2 aliados
+		# vivos (contando o Lobo) e o bônus ainda não está ativo nele.
+		var howl_spell = _find_spell(gs, u, func(s): return s.get("kind") == "hunt-howl")
+		if howl_spell != null and u["mp"] >= howl_spell["mpCost"] and not gs._has_status(u, "huntHowl") 				and gs.team_units(u["team"]).filter(func(a): return a["hp"] > 0).size() >= 2:
+			gs.cast_hunt_howl(u, howl_spell)
 		var regen_spell = _find_spell(gs, u, func(s): return s.get("kind") == "regen-boost")
 		if regen_spell != null and u["mp"] >= regen_spell["mpCost"] and u["hp"] < u["maxHp"] * 0.5 and not gs._has_status(u, "regenBoost"):
 			gs.cast_regen_boost(u, regen_spell)
@@ -551,6 +604,9 @@ static func enemy_act(gs: GameState, u: Dictionary) -> void:
 					gs.cast_creeping_destruction(u, creep_spell, target_tile)
 					gs.advance_to_next_turn()
 					return
+
+	if u.get("spriteKey", "") == "troncus" and _troncus_use_ability(gs, u):
+		return
 
 	var target = pick_nearest_target(gs, u)
 	if target == null:
@@ -795,7 +851,7 @@ static func enemy_act(gs: GameState, u: Dictionary) -> void:
 
 		var charge_spell = _find_spell(gs, u, func(s): return s.get("kind") == "charge")
 		if charge_spell != null and u["mp"] >= charge_spell["mpCost"]:
-			var charge_targets := gs.compute_charge_targets(u)
+			var charge_targets := gs.compute_charge_targets(u, charge_spell)
 			if charge_targets.size() > 0:
 				var chosen = charge_targets[0]
 				for t in charge_targets:

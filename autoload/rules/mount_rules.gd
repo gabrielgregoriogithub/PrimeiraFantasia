@@ -36,7 +36,19 @@ static func can_mount(gs: GameState, rider: Dictionary, mount: Dictionary) -> bo
 		and rider.get("mountedOn", "") == "" and mount.get("riderName", "") == "" \
 		and not rider.get("caged", false) and not gs.is_large_unit(rider) \
 		and not gs.is_rooted(rider) \
+		and rider_fits_mount(rider, mount) \
 		and gs.manhattan(rider, mount) == 1
+
+
+## Montaria com `mountRiderGroup` (Lobo: "goblinoides") só aceita cavaleiros
+## desse grupo (por spriteKey); sem o campo (Vestruz), qualquer um de 1 casa.
+static func rider_fits_mount(rider: Dictionary, mount: Dictionary) -> bool:
+	match String(mount.get("mountRiderGroup", "")):
+		"":
+			return true
+		"goblinoides":
+			return Units.goblinoid_keys().has(String(rider.get("spriteKey", "")))
+	return false
 
 
 static func mount_candidates(gs: GameState, rider: Dictionary) -> Array:
@@ -50,6 +62,10 @@ static func mount_unit(gs: GameState, rider: Dictionary, mount: Dictionary) -> b
 	rider["x"] = mount["x"]
 	rider["y"] = mount["y"]
 	rider["mountedOn"] = mount["name"]
+	# Lobo: sem arte "montado" combinada — o token do cavaleiro continua
+	# visível, desenhado por cima da montaria (ver UnitToken).
+	rider["ridingOverlay"] = mount.get("riderOverlay", false)
+	rider["mountSpriteKey"] = String(mount.get("spriteKey", ""))
 	mount["riderName"] = rider["name"]
 	# Sprite "idle montado" da dupla: pasta/arte do herói que está montado.
 	mount["riderSpriteKey"] = String(rider.get("spriteKey", ""))
@@ -85,6 +101,7 @@ static func dismount_unit(gs: GameState, rider: Dictionary, tile: Dictionary) ->
 	rider["x"] = tile["x"]
 	rider["y"] = tile["y"]
 	rider["mountedOn"] = ""
+	rider["ridingOverlay"] = false
 	mount["riderName"] = ""
 	mount["riderSpriteKey"] = ""
 	# A Vestruz volta a ter turno próprio, no mesmo ponto de CT do cavaleiro.
@@ -106,6 +123,7 @@ static func sync_mounts(gs: GameState) -> void:
 			mount["riderSpriteKey"] = ""
 			if rider != null:
 				rider["mountedOn"] = ""
+				rider["ridingOverlay"] = false
 			continue
 		rider["x"] = mount["x"]
 		rider["y"] = mount["y"]
@@ -137,6 +155,7 @@ static func _release_rider_on_mount_death(gs: GameState, mount: Dictionary) -> v
 	if rider == null:
 		return
 	rider["mountedOn"] = ""
+	rider["ridingOverlay"] = false
 	var spot = _nearest_fall_tile(gs, rider, {"x": mount["x"], "y": mount["y"]})
 	if spot != null:
 		rider["x"] = spot["x"]

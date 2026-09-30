@@ -99,6 +99,67 @@ static func build() -> Dictionary:
 			"tooltipNote": "Sempre acerta. Quem for atingido perde 1 de deslocamento por 1 turno.",
 			"sfx": "melee",
 		},
+		# Pedido do usuário: Kobold (Goblinoides). Adaga corpo a corpo (mesmo
+		# alcance/CT/swing da Adaga do Goblin) que aplica o Envenenado já
+		# existente — o mesmo da Zarabatana (dano padrão de STATUS_DOT_DAMAGE,
+		# 3 turnos, reaplicação somando turnos via add_status_effect) — só
+		# quando acerta (resolve_single_hit retorna antes dos `applies*` no erro).
+		"koboldPoisonDagger": {
+			"name": "Adaga Envenenada", "icon": "🗡️", "ctCost": 50,
+			"damageMin": 3, "damageMax": 6, "critMultiplier": 2, "critChance": 0.15,
+			"hitChance": 0.9, "swing": "stab", "minRange": 1, "maxRange": 1,
+			"appliesPoison": DataUtil.merge(poison, {"turns": 3}),
+			"tooltipNote": "Ataque corpo a corpo. Ao acertar, aplica Envenenado (1-3 de dano por turno, por 3 turnos).",
+			"sfx": "melee",
+		},
+		# Lança arremessada do Kobold: o alcance/linha limpa são COPIADOS da
+		# Zarabatana da Xamã em Units.build() (mesmo padrão do Cuspe Afiado da
+		# Vestruz), nunca duplicados aqui. Projétil "arrow", como o Arremessar
+		# Lança do Gnoll.
+		"koboldSpear": {
+			"name": "Lança", "icon": "🔱", "ctCost": 50,
+			"damageMin": 3, "damageMax": 6, "critMultiplier": 2, "critChance": 0.15,
+			"hitChance": 0.8, "projectile": "arrow",
+			"tooltipNote": "Arremesso à distância com o mesmo alcance da Zarabatana. Precisa de linha limpa; se algo bloquear, acerta quem estiver no caminho.",
+			"sfx": "ranged",
+		},
+		# Pedido do usuário: Troncus (Goblinoides, 2x2). Custos de CT no padrão
+		# do elenco (o pedido original era CT 0, o que deixaria o Troncus agir
+		# sem nunca passar a vez — decidido com o usuário). Empurrão reaproveita
+		# o campo genérico `knockback` (Cauda do Dragão), sem dano extra quando
+		# bloqueado. Alcance medido da borda do corpo 2x2 (GameState.manhattan).
+		"troncusPunch": {
+			"name": "Punho de Tronco", "icon": "✊", "ctCost": 60,
+			"damageMin": 6, "damageMax": 12, "critMultiplier": 2, "critChance": 0.1,
+			"hitChance": 0.85, "swing": "blunt", "minRange": 1, "maxRange": 1,
+			"damageType": "physical", "knockback": {"distance": 1},
+			"tooltipNote": "Corpo a corpo. Ao acertar, empurra o alvo 1 casa para longe do Troncus, se o destino estiver livre e dentro do mapa (bloqueado: só o dano). Personagens 2x2 não são empurrados.",
+			"sfx": "melee",
+		},
+		# Chicote de Cipó: status próprio "vineSlow" (-1 MOV), que expira no FIM
+		# do turno do alvo (mesma convenção do Enraizado) — assim a redução vale
+		# de fato durante 1 turno dele. Reaplicar só renova a duração.
+		"troncusVineWhip": {
+			"name": "Chicote de Cipó", "icon": "🌿", "ctCost": 50,
+			"damageMin": 3, "damageMax": 5, "critMultiplier": 2, "critChance": 0.05,
+			"hitChance": 0.9, "swing": "slash", "minRange": 1, "maxRange": 2,
+			"damageType": "physical", "appliesVineSlow": {"turns": 1, "moveReduction": 1},
+			"tooltipNote": "Alcance 2. Ao acertar, o alvo perde 1 de deslocamento durante 1 turno (não acumula; reaplicar renova a duração).",
+			"sfx": "melee",
+		},
+		# Pedido do usuário: Lobo dos Goblinoides. Mordida = ataque básico E a
+		# arma do Contra-ataque de Mordida (counterWeapon). `healOnHit` é o
+		# campo genérico novo de resolve_single_hit (cura fixa sorteada no
+		# atacante ao acertar, sem passar do HP máximo). Acerto/crítico não
+		# foram especificados: padrão do catálogo (80%, crítico padrão).
+		"wolfBite": {
+			"name": "Mordida", "icon": "🐺", "ctCost": 50,
+			"damageMin": 4, "damageMax": 8, "critMultiplier": 2, "hitChance": 0.8,
+			"swing": "stab", "minRange": 1, "maxRange": 1, "damageType": "physical",
+			"healOnHit": {"min": 1, "max": 2},
+			"tooltipNote": "Corpo a corpo. Ao acertar, o Lobo recupera 1-2 HP (sem passar do máximo).",
+			"sfx": "melee",
+		},
 		"club": {
 			"name": "Tacape", "icon": "🔨", "ctCost": 70,
 			"damageMin": 10, "damageMax": 14, "critMultiplier": 2, "critChance": 0.2,

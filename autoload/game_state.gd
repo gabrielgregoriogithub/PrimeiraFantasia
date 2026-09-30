@@ -31,6 +31,9 @@ var souls: Array = []
 ## morte já vira alma na hora, sem a janela de 3 rodadas, e essa alma cura
 ## menos que a alma "normal" (5 HP / 2 MP em vez de 10 HP / 5 MP).
 const IMMEDIATE_SOUL_SPRITE_KEYS := ["spd_rat", "spd_snake", "spd_gnoll", "spd_slime", "spd_goo"]
+## Armas básicas que recebem o preparo de Golpe Baixo/Poção Venenosa/Areia
+## nos Olhos, por spriteKey de quem ataca.
+const GOBLIN_TRICK_WEAPONS := {"goblin": ["Adaga", "Funda"], "kobold": ["Adaga Envenenada", "Lança"]}
 const IMMEDIATE_SOUL_HP := 5
 const IMMEDIATE_SOUL_MP := 2
 var last_reachable_came_from: Dictionary = {}
@@ -74,6 +77,9 @@ var bone_explosion_events: Array = []
 ## Um evento por alvo que passou no teste individual de uma Canção. A camada
 ## visual consome esta fila sem refazer o sorteio de 80%.
 var bard_song_vfx_events: Array = []
+## Uivo de Caça (Lobo): um evento por uso, com quem uivou e quem recebeu o
+## bônus — a camada visual (main.gd:_sync_visuals) toca o uivo e as ondas.
+var hunt_howl_events: Array = []
 ## Canal somente visual: inclui sucesso e falha individual sem alterar o
 ## canal legado, que continua contendo exclusivamente aplicações bem-sucedidas.
 var bard_song_feedback_events: Array = []
@@ -132,6 +138,7 @@ func reset() -> void:
 	cage_release_events = []
 	bone_explosion_events = []
 	bard_song_vfx_events = []
+	hunt_howl_events = []
 	bard_song_feedback_events = []
 	last_action_vfx = {}
 
@@ -2396,8 +2403,8 @@ func describe_attack_preview(attacker: Dictionary, defender: Dictionary, item: D
 			if e["type"] == "guarding":
 				damage_reduction += int(e["damageReduction"])
 				break
-		dmin = maxi(0, dmin - damage_reduction)
-		dmax = maxi(0, dmax - damage_reduction)
+		dmin = apply_physical_damage_reduction(defender, maxi(0, dmin - damage_reduction), damage_type_of(item))
+		dmax = apply_physical_damage_reduction(defender, maxi(0, dmax - damage_reduction), damage_type_of(item))
 		result["damageMin"] = dmin
 		result["damageMax"] = dmax
 		result["critChance"] = clampf(get_crit_chance(item, get_attack_angle(attacker, defender), attacker) + attacker.get("critBonusNextAttack", 0.0), 0.0, 1.0)
@@ -2433,6 +2440,43 @@ func is_ranged_attack(item: Dictionary) -> bool:
 ## Classificação única usada por imunidade etérea e afinidades elementais.
 ## Itens antigos são reconhecidos pelos metadados que já possuíam; itens
 ## novos declaram `damageType` explicitamente.
+## Escamas Protetoras (Kobold): -N em cada golpe FÍSICO recebido, sem
+## zerar um golpe que causaria dano (mínimo 1). Aplicada junto das demais
+## reduções de golpe direto, antes da afinidade elemental — então um golpe
+## físico E de fogo passa por ela e depois pelo ×0.75 do Sangue Dracônico.
+## Dano por turno de status nunca passa por aqui (outro caminho).
+## Casca Fortificada (Troncus, status "barkArmor") entra DEPOIS da redução
+## fixa, como porcentagem com o mesmo round() das afinidades elementais.
+func apply_physical_damage_reduction(defender: Dictionary, damage: int, damage_type: String) -> int:
+	if damage <= 0 or damage_type != "physical":
+		return damage
+	var reduction: int = int(defender.get("physicalDamageReduction", 0))
+	if reduction > 0:
+		damage = maxi(1, damage - reduction)
+	for effect in defender.get("statusEffects", []):
+		if effect.get("type", "") == "barkArmor":
+			damage = int(round(damage * (1.0 - float(effect.get("reduction", 0.0)))))
+			break
+	return damage
+
+## Instinto de Matilha (Lobo, campo `packInstinct`): bônus de dano FÍSICO se
+## outro lobo ou goblinoide aliado vivo estiver adjacente ao alvo — um único
+## bônus por ataque, não importa quantos aliados. O cavaleiro/montaria do
+## próprio atacante (mesma casa) não conta como "outro" aliado.
+func pack_instinct_bonus(attacker: Dictionary, defender: Dictionary, damage_type: String) -> int:
+	var pack: Dictionary = attacker.get("packInstinct", {})
+	if pack.is_empty() or damage_type != "physical":
+		return 0
+	var goblinoids := Units.goblinoid_keys()
+	for ally in alive_units():
+		if ally["name"] == attacker["name"] or ally["team"] != attacker["team"] or ally["name"] == defender["name"]:
+			continue
+		if String(ally.get("mountedOn", "")) == String(attacker["name"]) or String(attacker.get("mountedOn", "")) == String(ally["name"]):
+			continue
+		if goblinoids.has(String(ally.get("spriteKey", ""))) and manhattan(ally, defender) == 1:
+			return int(pack.get("damageBonus", 0))
+	return 0
+
 func damage_type_of(item: Dictionary) -> String:
 	if item.has("damageType"):
 		return String(item["damageType"]).to_lower()
@@ -2559,7 +2603,10 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 	var pending_steal: String = String(attacker.get("stealNextAttack", ""))
 	var steal_eligible: bool = is_weapon_attack and item.get("name", "") in ["Punhal", "Besta"] and pending_steal != ""
 	var steal_hp_bonus: int = rng.randi_range(3, 6) if steal_eligible and pending_steal == "steal-hp" else 0
-	var goblin_attack_eligible: bool = attacker.get("spriteKey", "") == "goblin" and is_weapon_attack and item.get("name", "") in ["Adaga", "Funda"]
+	# Golpe Baixo/Poção Venenosa/Areia nos Olhos preparam o próximo ataque
+	# básico: Adaga/Funda do Goblin ou Adaga Envenenada/Lança do Kobold (que
+	# recebeu parte dessas habilidades do Goblin).
+	var goblin_attack_eligible: bool = GOBLIN_TRICK_WEAPONS.get(String(attacker.get("spriteKey", "")), []).has(item.get("name", "")) and is_weapon_attack
 	var goblin_low_blow: bool = goblin_attack_eligible and attacker.get("goblinLowBlowNextAttack", false)
 	var goblin_poison: bool = goblin_attack_eligible and attacker.get("goblinPoisonNextAttack", false)
 	var goblin_sand: bool = goblin_attack_eligible and attacker.get("goblinSandNextAttack", false)
@@ -2642,7 +2689,9 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 		if effect.get("type", "") == "marked":
 			marked_bonus += int(effect.get("damageBonus", 1))
 	var crit_multiplier: int = item["critMultiplier"] if is_crit else 1
-	var damage: int = maxi(0, (base_damage + sneak_attack_bonus + one_shot_damage_bonus + fury_bonus + song_damage_bonus + war_howl_bonus + steal_hp_bonus + marked_bonus + defense_down) * crit_multiplier - damage_reduction)
+	var pack_bonus: int = pack_instinct_bonus(attacker, defender, damage_type)
+	var damage: int = maxi(0, (base_damage + sneak_attack_bonus + one_shot_damage_bonus + fury_bonus + song_damage_bonus + war_howl_bonus + steal_hp_bonus + marked_bonus + defense_down + pack_bonus) * crit_multiplier - damage_reduction)
+	damage = apply_physical_damage_reduction(defender, damage, damage_type)
 	if item.get("noDamage", false): damage = 0
 	# Guarda Quebrada (Quebra-Guarda do Samurai): cada ataque que acerta o
 	# alvo causa +1 de dano enquanto o status durar (um único +1: reaplicar só
@@ -2721,6 +2770,14 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 				var actual_heal := mini(healed, int(attacker["maxHp"]) - int(attacker["hp"]))
 				attacker["hp"] = mini(int(attacker["maxHp"]), int(attacker["hp"]) + healed)
 				_log("%s absorve %d HP com %s!" % [attacker["name"], actual_heal, item["name"]])
+	# Mordida (Lobo): cura fixa sorteada no atacante ao acertar, sem passar
+	# do HP máximo (vale também pro Contra-ataque de Mordida).
+	if item.has("healOnHit") and int(attacker.get("hp", 0)) > 0:
+		var bite_heal: int = rng.randi_range(int(item["healOnHit"]["min"]), int(item["healOnHit"]["max"]))
+		var bite_healed: int = mini(bite_heal, int(attacker["maxHp"]) - int(attacker["hp"]))
+		attacker["hp"] = int(attacker["hp"]) + bite_healed
+		if bite_healed > 0:
+			_log("%s recupera %d HP com %s!" % [attacker["name"], bite_healed, item["name"]])
 	if steal_hp_bonus > 0:
 		var stolen_hp: int = mini(steal_hp_bonus, hp_before_hit)
 		var steal_heal: int = mini(stolen_hp, int(attacker["maxHp"]) - int(attacker["hp"]))
@@ -2747,7 +2804,11 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 	# regra já aplicada ao Golpe Debilitante.
 	if item.has("appliesBleed") and not defender.get("undead", false) and rng.randf() < float(item["appliesBleed"].get("chance", 1.0)):
 		var bl: Dictionary = item["appliesBleed"]
-		add_status_effect(defender, {"type": "bleed", "damageMin": bl["damageMin"], "damageMax": bl["damageMax"], "turnsLeft": bl["turns"]})
+		if bl.get("refresh", false):
+			# Dilacerar (Lobo): não acumula — reaplicar só renova a duração.
+			_replace_timed_status(defender, {"type": "bleed", "damageMin": bl["damageMin"], "damageMax": bl["damageMax"], "turnsLeft": bl["turns"]})
+		else:
+			add_status_effect(defender, {"type": "bleed", "damageMin": bl["damageMin"], "damageMax": bl["damageMax"], "turnsLeft": bl["turns"]})
 		_log("%s está sangrando!" % defender["name"])
 	if item.has("appliesBurn"):
 		if is_on_water(defender):
@@ -2812,8 +2873,14 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 		attacker["hitAndRun"] = false
 		_log("%s pode bater e correr após acertar!" % attacker["name"])
 	if item.has("knockback") and defender["hp"] > 0:
-		var push_dx: int = _signi(defender["x"] - attacker["x"])
-		var push_dy: int = _signi(defender["y"] - attacker["y"])
+		# Direção a partir da borda do corpo de quem ataca (Troncus/Dragão 2x2
+		# não empurram na diagonal um alvo que está reto à frente de uma das
+		# casas do corpo). Corpo 1x1: mesmo sinal de antes.
+		var push_dir := body_direction(attacker, {"x": defender["x"], "y": defender["y"]})
+		if push_dir == Vector2i.ZERO:
+			push_dir = Vector2i(_signi(defender["x"] - attacker["x"]), _signi(defender["y"] - attacker["y"]))
+		var push_dx: int = push_dir.x
+		var push_dy: int = push_dir.y
 		if push_dx != 0 or push_dy != 0:
 			push_unit(defender, push_dx, push_dy, item["knockback"]["distance"])
 	if item.get("hitAndRun", false) and defender["hp"] > 0:
@@ -2860,6 +2927,8 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 			slow_amount = int(weakened_existing.get("moveReduction", slow_amount))
 			weakened_existing["turnsLeft"] = item["appliesSlow"]["turns"]
 		_log("%s fica mais lento! -%d de deslocamento por %d turno(s)." % [defender["name"], slow_amount, item["appliesSlow"]["turns"]])
+	if item.has("appliesVineSlow"):
+		_apply_vine_slow(defender, item["appliesVineSlow"])
 	# Raio de Gelo: reduz agilidade (não deslocamento) — soma com usos
 	# futuros em vez de substituir.
 	if item.has("appliesSpeedReduction") and defender["hp"] > 0:
@@ -2916,7 +2985,10 @@ func resolve_single_hit(attacker: Dictionary, defender: Dictionary, item: Dictio
 	# Contra-ataque passivo (Orc/Troll): só dispara em quem levou o golpe
 	# original (nunca no próprio contra-ataque), só se sobreviveu, e só se
 	# quem bateu ainda está ao alcance do contra-ataque.
-	if not is_counter_attack and defender["hp"] > 0 and defender.get("counterAttackChance", 0) > 0 and attacker["name"] != defender["name"]:
+	# Lobo (`counterMeleeOnly`): só revida golpe corpo a corpo (alcance 1,
+	# adjacente) — nunca ataque à distância, área ou outro revide.
+	var counter_allowed: bool = not defender.get("counterMeleeOnly", false) or (not is_ranged_attack(item) and distance <= 1)
+	if not is_counter_attack and counter_allowed and defender["hp"] > 0 and attacker["hp"] > 0 and defender.get("counterAttackChance", 0) > 0 and attacker["name"] != defender["name"]:
 		var counter_weapon = defender.get("counterWeapon")
 		if counter_weapon != null and is_in_weapon_range(counter_weapon, distance):
 			if rng.randf() < defender["counterAttackChance"]:
@@ -3114,6 +3186,18 @@ func apply_status_effects_at_turn_start(u: Dictionary) -> void:
 			if effect["turnsLeft"] <= 0:
 				_log("%s não está mais na postura defensiva." % u["name"])
 			continue
+		if type == "huntHowl":
+			effect["turnsLeft"] -= 1
+			if effect["turnsLeft"] <= 0:
+				u["speed"] -= effect["speedBonus"]
+				_log("%s não está mais sob o Uivo de Caça." % u["name"])
+			continue
+		# Casca Fortificada: mesma contagem da Evasiva/Defender (início do turno).
+		if type == "barkArmor":
+			effect["turnsLeft"] -= 1
+			if effect["turnsLeft"] <= 0:
+				_log("%s não está mais com a casca fortificada." % u["name"])
+			continue
 		if type == "focus":
 			effect["turnsLeft"] -= 1
 			if effect["turnsLeft"] <= 0:
@@ -3165,6 +3249,12 @@ func apply_status_effects_at_turn_end(u: Dictionary) -> void:
 	var effects: Array = (u["statusEffects"] as Array).duplicate()
 	for effect in effects:
 		var type: String = effect["type"]
+		if type == "vineSlow":
+			effect["turnsLeft"] -= 1
+			if effect["turnsLeft"] <= 0:
+				u["moveRange"] += effect["moveReduction"]
+				_log("%s se livra dos cipós." % u["name"])
+			continue
 		if type == "fury":
 			if effect.get("hpDrainPerTurn", 0) > 0:
 				u["hp"] -= effect["hpDrainPerTurn"]
@@ -3539,6 +3629,7 @@ func _trigger_bone_explosion(skeleton: Dictionary) -> void:
 func begin_turn_for(u: Dictionary) -> void:
 	current_actor = u
 	global_turn_count += 1
+	_expire_caster_turn_effects(u)
 	# Hazard de mapa (não roteiro de campanha) — dispara em qualquer modo,
 	# inclusive PVP, ao contrário dos reforços abaixo.
 	maybe_trigger_desfiladeiro_wind()
@@ -3608,6 +3699,11 @@ func begin_turn_for(u: Dictionary) -> void:
 			if u["hp"] <= 0:
 				u["hp"] = 0
 				_log("%s foi derrotado!" % u["name"])
+		# Turno perdido também é um fim de turno parado (Raízes Regeneradoras).
+		u["displacedThisTurn"] = false
+		u["turnStartX"] = u["x"]
+		u["turnStartY"] = u["y"]
+		_apply_root_regen(u)
 		if check_battle_outcome():
 			return
 		begin_turn_for(advance_ct_until_ready())
@@ -3622,6 +3718,11 @@ func begin_turn_for(u: Dictionary) -> void:
 	u["hasActed"] = false
 	u["cannotMoveThisTurn"] = false
 	u["abilityUsedThisTurn"] = false
+	# Raízes Regeneradoras: posição de início do turno + qualquer deslocamento
+	# (movimento, empurrão) decidem a regeneração no fim do turno.
+	u["turnStartX"] = u["x"]
+	u["turnStartY"] = u["y"]
+	u["displacedThisTurn"] = false
 	# Sem isso, o nome/tipo de habilidade usado num turno anterior nunca sai
 	# daqui — cast_self_ability bloqueava permanentemente qualquer reuso
 	# futuro de Tiro Rápido (ou qualquer outra habilidade de auto-alvo) como
@@ -3635,6 +3736,25 @@ func begin_turn_for(u: Dictionary) -> void:
 ## MP/HP por descansar), zera buffs de "só este turno", decrementa
 ## armadilhas acionadas, regenera Castelo/Montanha, e começa o turno de
 ## quem for o próximo pronto (ou encerra, se a batalha já tiver terminado).
+## Raízes Regeneradoras (Troncus, campo `rootRegen`): uma vez no FIM de cada
+## turno dele, enquanto vivo — "still" HP se não se deslocou em nenhum momento
+## do turno (atacar/usar habilidade/virar não conta), "moved" caso contrário
+## (andar, ser empurrado, teleporte...). Nunca passa do HP máximo.
+func _apply_root_regen(u: Dictionary) -> void:
+	var regen: Dictionary = u.get("rootRegen", {})
+	if regen.is_empty() or int(u.get("hp", 0)) <= 0:
+		return
+	var displaced: bool = u.get("displacedThisTurn", false) \
+		or int(u.get("turnStartX", u["x"])) != int(u["x"]) or int(u.get("turnStartY", u["y"])) != int(u["y"])
+	var amount: int = int(regen["moved"] if displaced else regen["still"])
+	var healed: int = mini(amount, int(u["maxHp"]) - int(u["hp"]))
+	u["hp"] = int(u["hp"]) + healed
+	u["displacedThisTurn"] = false
+	u["turnStartX"] = u["x"]
+	u["turnStartY"] = u["y"]
+	if healed > 0:
+		_log("%s regenera %d HP pelas raízes%s." % [u["name"], healed, "" if displaced else " (ficou parado)"])
+
 func advance_to_next_turn() -> void:
 	var finished_unit: Dictionary = current_actor
 	_check_cage_release(finished_unit)
@@ -3643,6 +3763,7 @@ func advance_to_next_turn() -> void:
 	# tick de dano no PRÓXIMO fim de turno desta unidade, não neste mesmo
 	# instante em que acabou de ser aplicado.
 	apply_status_effects_at_turn_end(finished_unit)
+	_apply_root_regen(finished_unit)
 	var finished_mount = mount_of(finished_unit)
 	if finished_mount != null:
 		apply_status_effects_at_turn_end(finished_mount)
@@ -3849,6 +3970,12 @@ func cast_self_ability(caster: Dictionary, item: Dictionary) -> void:
 			cast_monk_meditate(caster, item)
 		"evasive":
 			cast_evasive_maneuver(caster, item)
+		"hunt-howl":
+			cast_hunt_howl(caster, item)
+		"bark-armor":
+			_replace_timed_status(caster, {"type": "barkArmor", "turnsLeft": int(item.get("turns", 2)), "reduction": float(item.get("damageReductionPercent", 0.25))})
+			_log("%s endurece a casca: -%d%% de dano físico por %d turno(s)." % [caster["name"], roundi(float(item.get("damageReductionPercent", 0.25)) * 100.0), int(item.get("turns", 2))])
+			finish_free_self_action(caster, item)
 		"hit-and-run":
 			caster["hitAndRun"] = true
 			_log("%s prepara Bater e Correr: o próximo acerto libera movimento extra." % caster["name"])
@@ -4312,11 +4439,11 @@ func _revive_unit_to_half_hp(target: Dictionary) -> int:
 	target.erase("turnsSinceDeath")
 	target.erase("_deathHandled")
 	for effect in target.get("statusEffects", []):
-		if effect["type"] == "fury":
+		if effect["type"] == "fury" or effect["type"] == "huntHowl":
 			target["speed"] -= effect["speedBonus"]
 		elif effect["type"] == "swiftFeet":
 			target["moveRange"] -= effect["moveBonus"]
-		elif effect["type"] == "weakened":
+		elif effect["type"] == "weakened" or effect["type"] == "vineSlow":
 			target["moveRange"] += effect["moveReduction"]
 		elif effect["type"] == "slowed":
 			target["speed"] += effect["speedReduction"]
@@ -4353,9 +4480,17 @@ func cast_root_spell(caster: Dictionary, target: Dictionary, spell: Dictionary) 
 		_log("%s tenta atingir %s com %s, mas %s está invisível!" % [caster["name"], target["name"], spell["name"], target["name"]])
 		finalize_action(caster, spell)
 		return
+	if spell.get("enemyOnly", false) and target["team"] == caster["team"]:
+		_log("%s só pode ser usada em inimigos." % spell["name"])
+		return
 	var is_hit: bool = rng.randf() < float(get_effective_hit_chance(caster, target, spell, manhattan(caster, target)))
 	if not is_hit:
 		_log("%s lança %s em %s e erra!" % [caster["name"], spell["name"], target["name"]])
+	elif spell.get("refreshesDuration", false):
+		# Raízes Aprisionadoras (Troncus): reaplicar renova, não soma turnos.
+		if not (target.get("statusImmunities", []) as Array).has("root"):
+			_replace_timed_status(target, {"type": "root", "damageMin": spell["damageMin"], "damageMax": spell["damageMax"], "turnsLeft": spell["turns"]})
+		_log("%s prende %s com %s por %d turno(s)!" % [caster["name"], target["name"], spell["name"], spell["turns"]])
 	else:
 		add_status_effect(target, {"type": "root", "damageMin": spell["damageMin"], "damageMax": spell["damageMax"], "turnsLeft": spell["turns"]})
 		_log("%s prende %s com %s!" % [caster["name"], target["name"], spell["name"]])
@@ -4922,13 +5057,20 @@ func compute_line_target_tiles(u: Dictionary, item: Dictionary, cardinal_only: b
 
 ## Empurra `u` em linha reta (dx,dy) até `distance` quadrados; pára antes se
 ## sair do tabuleiro ou esbarrar em alguém. Devolve se de fato se moveu.
+## Pedido do usuário: personagens 2x2 (Troll/Goo/Dragão/Salamandra/Troncus)
+## não são afetados por empurrão — nunca saem do lugar e também não levam o
+## dano extra de "bloqueado" (quem chama checa is_large_unit). O dano normal
+## do golpe continua.
 func push_unit(u: Dictionary, dx: int, dy: int, distance: int) -> bool:
+	if is_large_unit(u):
+		_log("%s é grande demais para ser empurrado(a)." % u["name"])
+		return false
 	var final_x: int = u["x"]
 	var final_y: int = u["y"]
 	for d in range(1, distance + 1):
 		var nx: int = u["x"] + dx * d
 		var ny: int = u["y"] + dy * d
-		if not in_bounds(nx, ny) or occupant_at(nx, ny) != null:
+		if not _push_destination_free(u, nx, ny):
 			break
 		final_x = nx
 		final_y = ny
@@ -4936,9 +5078,36 @@ func push_unit(u: Dictionary, dx: int, dy: int, distance: int) -> bool:
 	if moved:
 		u["x"] = final_x
 		u["y"] = final_y
+		u["displacedThisTurn"] = true
 		_log("%s é empurrado(a) para (%d, %d)!" % [u["name"], final_x, final_y])
 		sync_mounts()
 	return moved
+
+## Chicote de Cipó (Troncus): -MOV que dura até o FIM do próximo turno do
+## alvo (tick em apply_status_effects_at_turn_end, mesma convenção do
+## Enraizado). Não acumula: reaplicar só renova turnsLeft. Nunca deixa MOV
+## negativo e devolve exatamente o que tirou quando expira.
+func _apply_vine_slow(defender: Dictionary, slow: Dictionary) -> void:
+	for existing in defender.get("statusEffects", []):
+		if existing.get("type", "") == "vineSlow":
+			existing["turnsLeft"] = int(slow["turns"])
+			_log("%s continua enredado(a) pelos cipós (%d turno)." % [defender["name"], int(slow["turns"])])
+			return
+	var amount: int = mini(int(slow["moveReduction"]), maxi(int(defender.get("moveRange", 0)), 0))
+	defender["moveRange"] = int(defender.get("moveRange", 0)) - amount
+	(defender["statusEffects"] as Array).append({"type": "vineSlow", "turnsLeft": int(slow["turns"]), "moveReduction": amount})
+	_log("%s é enredado(a) pelos cipós! -%d de deslocamento por %d turno." % [defender["name"], amount, int(slow["turns"])])
+
+## Destino de empurrão: todas as casas do corpo dentro do mapa e sem outra
+## unidade/cadáver — nunca empurra pra fora nem por cima de alguém.
+func _push_destination_free(u: Dictionary, x: int, y: int) -> bool:
+	for tile in footprint_tiles(u, x, y):
+		if not in_bounds(int(tile["x"]), int(tile["y"])):
+			return false
+		var occupant = occupant_at(int(tile["x"]), int(tile["y"]))
+		if occupant != null and occupant["name"] != u["name"]:
+			return false
+	return true
 
 ## Empurrão radial de explosão em área: cada atingido vai pra LONGE do ponto
 ## de impacto. Quem está bem em cima do impacto não tem direção — tratado
@@ -4947,7 +5116,7 @@ func apply_point_blast_knockback(defender: Dictionary, impact: Dictionary, knock
 	var dx: int = _signi(defender["x"] - impact["x"])
 	var dy: int = _signi(defender["y"] - impact["y"])
 	var moved: bool = (dx != 0 or dy != 0) and push_unit(defender, dx, dy, knockback["distance"])
-	if not moved and knockback.get("blockedExtraDamage"):
+	if not moved and knockback.get("blockedExtraDamage") and not is_large_unit(defender):
 		defender["hp"] = maxi(defender["hp"] - knockback["blockedExtraDamage"], 0)
 		_log("%s está bloqueado(a) e não pode ser empurrado(a) — leva %d de dano extra!" % [defender["name"], knockback["blockedExtraDamage"]])
 
@@ -5285,12 +5454,58 @@ func cast_throw_log(caster: Dictionary, spell: Dictionary, target_tile: Dictiona
 		var was_hit := resolve_single_hit(caster, target, spell)
 		if was_hit and target["hp"] > 0 and spell.has("knockback"):
 			var moved := push_unit(target, dx, dy, spell["knockback"]["distance"])
-			if not moved and spell["knockback"].get("blockedExtraDamage"):
+			if not moved and spell["knockback"].get("blockedExtraDamage") and not is_large_unit(target):
 				target["hp"] = maxi(target["hp"] - spell["knockback"]["blockedExtraDamage"], 0)
 				_log("%s está bloqueado(a) e não pode ser empurrado(a) — leva %d de dano extra!" % [target["name"], spell["knockback"]["blockedExtraDamage"]])
 	damage_trees_in_tiles(line_tiles, spell["damageMin"], spell["damageMax"])
 	damage_structures_in_tiles(line_tiles, spell["damageMin"], spell["damageMax"])
 	finalize_action(caster, spell)
+
+## Varredura de Galhos (Troncus): mesma faixa cardeal do Tacar Tronco (pela
+## regra 2x2, sai das 2 casas da borda do corpo), mas só atinge INIMIGOS e
+## cada um no máximo uma vez (units_in_tiles já deduplica quem ocupa várias
+## casas da área) — acerto rolado por alvo em resolve_single_hit.
+func cast_branch_sweep(caster: Dictionary, spell: Dictionary, target_tile: Dictionary) -> void:
+	record_area_action(caster, spell, target_tile)
+	set_facing_towards(caster, target_tile)
+	var tiles = compute_aoe_area_tiles(caster, spell, target_tile)
+	if tiles == null:
+		tiles = []
+	_log("%s usa %s, varrendo a área à frente!" % [caster["name"], spell["name"]])
+	var hits: Array = units_in_tiles(tiles).filter(func(o): return o["team"] != caster["team"] and o["hp"] > 0)
+	if hits.is_empty():
+		_log("Não havia inimigos na área da varredura.")
+	for enemy in hits:
+		resolve_single_hit(caster, enemy, spell)
+	finalize_action(caster, spell)
+
+## Seiva Restauradora (Troncus): o próprio Troncus ou um aliado adjacente ao
+## corpo 2x2. MP pago ANTES da recuperação (inclusive em si mesmo); HP e MP
+## sorteados separadamente, sem passar dos máximos; remove Envenenado.
+func cast_restoring_sap(caster: Dictionary, target: Dictionary, spell: Dictionary) -> bool:
+	var cost: int = int(spell.get("mpCost", 0))
+	var is_self: bool = target["name"] == caster["name"]
+	if target["hp"] <= 0 or target["team"] != caster["team"] or (not is_self and manhattan(caster, target) > int(spell.get("maxRange", 1))):
+		_log("%s só pode ser usada no próprio Troncus ou num aliado adjacente." % spell["name"])
+		return false
+	if int(caster.get("mp", 0)) < cost:
+		_log("%s não tem MP suficiente para %s." % [caster["name"], spell["name"]])
+		return false
+	caster["mp"] = int(caster["mp"]) - cost
+	var hp_roll: int = rng.randi_range(int(spell["healMin"]), int(spell["healMax"]))
+	var mp_roll: int = rng.randi_range(int(spell["mpRestoreMin"]), int(spell["mpRestoreMax"]))
+	var healed: int = mini(hp_roll, int(target["maxHp"]) - int(target["hp"]))
+	target["hp"] = int(target["hp"]) + healed
+	var restored: int = mini(mp_roll, maxi(int(target.get("maxMp", 0)) - int(target.get("mp", 0)), 0))
+	if target.has("mp"):
+		target["mp"] = int(target["mp"]) + restored
+	var was_poisoned: bool = _has_status(target, "poison")
+	target["statusEffects"] = (target.get("statusEffects", []) as Array).filter(func(e): return e.get("type", "") != "poison")
+	_log("%s usa %s em %s: +%d HP e +%d MP%s." % [caster["name"], spell["name"], target["name"], healed, restored, " e remove o veneno" if was_poisoned else ""])
+	set_facing_towards(caster, target)
+	# MP já pago acima — finalize_action só cobra o CT e encerra a ação.
+	finalize_action(caster, DataUtil.merge(spell, {"mpCost": 0}))
+	return true
 
 ## Tiro Penetrante (Arqueiro): igual ao Relâmpago, mas sempre vai até o
 ## alcance máximo fixo (não até onde clicou) e só nas 4 direções cardeais.
@@ -5445,6 +5660,10 @@ func compute_charge_targets(u: Dictionary, item: Dictionary = {}) -> Array:
 				if occupant["team"] != u["team"]:
 					targets.append({"x": x, "y": y})
 				break
+			# Bote Selvagem (`clearPathOnly`): terreno bloqueante/estrutura no
+			# caminho encerra a linha (a Investida do Orc continua como era).
+			if item.get("clearPathOnly", false) and (_terrain_blocks_transit(terrain_at(x, y), u) or structure_at(x, y) != null):
+				break
 	return targets
 
 ## Investida (Orc): corre em linha reta até `target`, pára ao lado dele
@@ -5458,24 +5677,87 @@ func cast_charge(caster: Dictionary, target: Dictionary, item: Dictionary) -> bo
 	var charge_distance: int = maxi(absi(landing["x"] - caster["x"]), absi(landing["y"] - caster["y"]))
 	for distance in range(1, charge_distance + 1):
 		charge_path.append({"x": caster["x"] + dx * distance, "y": caster["y"] + dy * distance})
-	if occupant_at(landing["x"], landing["y"]) != null:
-		_log("%s não pode executar Investida: o ponto de parada está ocupado por um corpo." % caster["name"])
+	# Alvo já adjacente: o ponto de parada é a própria casa de quem avança.
+	var landing_blocker = occupant_at(landing["x"], landing["y"])
+	if landing_blocker != null and landing_blocker["name"] != caster["name"]:
+		_log("%s não pode executar %s: o ponto de parada está ocupado por um corpo." % [caster["name"], item.get("name", "Investida")])
 		return false
+	if landing["x"] != caster["x"] or landing["y"] != caster["y"]:
+		caster["displacedThisTurn"] = true
 	caster["x"] = landing["x"]
 	caster["y"] = landing["y"]
 	caster["hasMoved"] = true
+	# Montaria conduzida (Lobo com cavaleiro): quem gasta o movimento do turno
+	# é o cavaleiro, e ele acompanha a montaria.
+	turn_owner(caster)["hasMoved"] = true
 	separate_living_unit_from_corpse(caster, previous_tile, dy, -dx)
 	set_facing_towards(caster, target)
+	sync_mounts()
 	apply_trap_crossings(caster, charge_path)
 	_log("%s avança numa investida contra %s!" % [caster["name"], target["name"]])
 	var was_hit := resolve_single_hit(caster, target, item)
+	if was_hit and item.get("rootsUntilCasterTurn", false) and target.get("hp", 0) > 0:
+		_apply_caster_turn_root(caster, target)
 	if was_hit and item.has("knockback") and target.get("hp", 0) > 0:
 		var moved := push_unit(target, dx, dy, int(item["knockback"].get("distance", 1)))
-		if not moved and item["knockback"].has("blockedExtraDamage"):
+		if not moved and item["knockback"].has("blockedExtraDamage") and not is_large_unit(target):
 			target["hp"] = maxi(0, int(target["hp"]) - int(item["knockback"]["blockedExtraDamage"]))
 			_log("%s está bloqueado(a) e sofre %d dano extra!" % [target["name"], item["knockback"]["blockedExtraDamage"]])
 	finalize_action(caster, item)
 	return true
+
+## Bote Selvagem: imobilizado ("root", sem dano) até o INÍCIO do próximo
+## turno de quem aplicou — `expiresOnTurnOf` é conferido em begin_turn_for
+## (ver _expire_caster_turn_effects), não o contador do alvo. turnsLeft alto
+## só impede o tique de fim de turno do alvo de removê-lo antes da hora.
+func _apply_caster_turn_root(caster: Dictionary, target: Dictionary) -> void:
+	if (target.get("statusImmunities", []) as Array).has("root"):
+		return
+	var effects: Array = (target.get("statusEffects", []) as Array).filter(func(e): return not (e.get("type", "") == "root" and e.get("expiresOnTurnOf", "") == caster["name"]))
+	effects.append({"type": "root", "damageMin": 0, "damageMax": 0, "turnsLeft": 99, "expiresOnTurnOf": caster["name"]})
+	target["statusEffects"] = effects
+	_log("%s fica imobilizado(a) até o próximo turno de %s!" % [target["name"], caster["name"]])
+
+## Início do turno de `u` (ou da montaria que ele conduz): encerra os efeitos
+## presos ao turno dele (Bote Selvagem). Efeito cuja fonte morreu também cai.
+func _expire_caster_turn_effects(u: Dictionary) -> void:
+	var owners := [String(u["name"])]
+	var ridden = mount_of(u)
+	if ridden != null: owners.append(String(ridden["name"]))
+	for other in units:
+		var effects: Array = other.get("statusEffects", [])
+		if not effects.any(func(e): return e.has("expiresOnTurnOf")):
+			continue
+		other["statusEffects"] = effects.filter(func(e):
+			if not e.has("expiresOnTurnOf"): return true
+			var source_name: String = String(e["expiresOnTurnOf"])
+			if owners.has(source_name): return false
+			return units.any(func(s): return s["name"] == source_name and s["hp"] > 0))
+
+## Uivo de Caça (Lobo): todos os aliados VIVOS no campo, inclusive quem uivou,
+## sem limite de distância. +AGI por N turnos; não acumula (renova a duração
+## e mantém o mesmo bônus). Ação livre (só MP).
+func cast_hunt_howl(caster: Dictionary, item: Dictionary) -> void:
+	var bonus: int = int(item.get("speedBonus", 2))
+	var turns: int = int(item.get("turns", 2))
+	var affected: Array = []
+	for ally in units:
+		if ally["team"] != caster["team"] or int(ally["hp"]) <= 0 or ally.get("caged", false):
+			continue
+		var existing = null
+		for e in ally.get("statusEffects", []):
+			if e.get("type", "") == "huntHowl":
+				existing = e
+				break
+		if existing != null:
+			existing["turnsLeft"] = turns
+		else:
+			ally["speed"] = int(ally["speed"]) + bonus
+			(ally["statusEffects"] as Array).append({"type": "huntHowl", "turnsLeft": turns, "speedBonus": bonus})
+		affected.append(String(ally["name"]))
+	hunt_howl_events.append({"casterName": caster["name"], "targetNames": affected})
+	_log("%s uiva! %d aliado(s) ganham +%d de agilidade por %d turno(s)." % [caster["name"], affected.size(), bonus, turns])
+	finish_free_self_action(caster, item)
 
 func cast_dragon_kick(caster: Dictionary, item: Dictionary, target_tile: Dictionary) -> bool: return MonkRules.cast_dragon_kick(self, caster, item, target_tile)
 func compute_iaijutsu_targets(u: Dictionary, item: Dictionary) -> Array: return SamuraiRules.compute_iaijutsu_targets(self, u, item)
@@ -5784,6 +6066,8 @@ func perform_move(u: Dictionary, dest: Dictionary) -> void:
 	if path.is_empty():
 		cost = last_reachable_costs.get(tile_key(dest["x"], dest["y"]), manhattan(u, dest))
 	set_facing_towards(u, dest)
+	if int(u["x"]) != int(dest["x"]) or int(u["y"]) != int(dest["y"]):
+		u["displacedThisTurn"] = true
 	u["x"] = dest["x"]
 	u["y"] = dest["y"]
 	sync_mounts()

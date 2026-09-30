@@ -318,6 +318,42 @@ static func build() -> Dictionary:
 			# cadáver à da pose de pé (walk_front_1) em vez de só minimizar a
 			# largura.
 			{"death.png": 1.37}),
+		# Pedido do usuário: Kobold (Goblinoides) — attack_1/2.png, hit.png
+		# (já com o clarão de impacto desenhado), death.png, portrait.png e
+		# walk_front/back/left/right_1/2.png em pares (pés/braços alternando).
+		# Os recortes originais foram normalizados pro mesmo padrão do Goblin
+		# (canvas 512x512, escala única, pés na mesma linha de base; originais
+		# em _asset_backups_20260930_kobold/). Sem PNGs de idle: reaproveita
+		# os 2 quadros de walk parado, mesmo truque do Orc/Xamã/Troll.
+		"kobold": _enemy_folder_spec("kobold", {
+			"idle_down":[["walk_front_1.png","walk_front_2.png"],3.0],"idle_up":[["walk_back_1.png","walk_back_2.png"],3.0],"idle_left":[["walk_left_1.png","walk_left_2.png"],3.0],"idle_right":[["walk_right_1.png","walk_right_2.png"],3.0],
+			"walk_down":[["walk_front_1.png","walk_front_2.png"],7.0],"walk_up":[["walk_back_1.png","walk_back_2.png"],7.0],"walk_left":[["walk_left_1.png","walk_left_2.png"],8.0],"walk_right":[["walk_right_1.png","walk_right_2.png"],8.0],
+			"attack":[["attack_1.png","attack_2.png"],10.0],"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]}),
+		# Pedido do usuário: Troncus (homem-árvore 2x2 dos Goblinoides) — mesmo
+		# conjunto de arquivos do Kobold. Normalizado pro padrão do Troll
+		# (canvas quadrado, escala única, pés na mesma linha; walk_left_2/
+		# walk_right_2 vieram em outra resolução e foram igualados ao par;
+		# originais em _asset_backups_20260930_troncus/). Idle = os 2 quadros
+		# de walk de cada direção (pedido do usuário, igual ao Kobold).
+		# death.png: 1.23 iguala a área visual do cadáver à pose de pé.
+		"troncus": _enemy_folder_spec("troncus", {
+			"idle_down":[["walk_front_1.png","walk_front_2.png"],3.0],"idle_up":[["walk_back_1.png","walk_back_2.png"],3.0],"idle_left":[["walk_left_1.png","walk_left_2.png"],3.0],"idle_right":[["walk_right_1.png","walk_right_2.png"],3.0],
+			"walk_down":[["walk_front_1.png","walk_front_2.png"],7.0],"walk_up":[["walk_back_1.png","walk_back_2.png"],7.0],"walk_left":[["walk_left_1.png","walk_left_2.png"],8.0],"walk_right":[["walk_right_1.png","walk_right_2.png"],8.0],
+			"attack":[["attack_1.png","attack_2.png"],10.0],"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]},
+			{"death.png": 1.23}),
+		# Pedido do usuário: Lobo dos Goblinoides — walk_*_1/2 nas 4 direções,
+		# attack_1/2, hit, death e portrait. Walk e idle usam as MESMAS
+		# texturas. Attack/
+		# hit/death só existem de perfil (virados pra direita): espelhados
+		# automaticamente quando o lobo olha pra esquerda (_animal_should_flip).
+		# Idle = a pose _1 de cada direção (parada); walk alterna _1/_2.
+		# Normalizado (canvas 512, uma escala por vista, pés na mesma linha;
+		# originais em _asset_backups_20260930_lobo/). As 3 imagens "Imagem do
+		# ChatGPT ..." da pasta não são usadas.
+		"lobo": _enemy_folder_spec("lobo", {
+			"idle_down":[["walk_front_1.png"],2.0],"idle_up":[["walk_back_1.png"],2.0],"idle_left":[["walk_left_1.png"],2.0],"idle_right":[["walk_right_1.png"],2.0],
+			"walk_down":[["walk_front_1.png","walk_front_2.png"],8.0],"walk_up":[["walk_back_1.png","walk_back_2.png"],8.0],"walk_left":[["walk_left_1.png","walk_left_2.png"],9.0],"walk_right":[["walk_right_1.png","walk_right_2.png"],9.0],
+			"attack":[["attack_1.png","attack_2.png"],10.0],"hit":[["hit.png"],8.0],"death":[["death.png"],6.0]}),
 		# Pedido do usuário: Guardian Buttereye (assets/enemies/guardians/
 		# buttereye) ganhou attack_1/2.png, hit.png, death.png e
 		# walk_front/back/left/right_1/2.png — sem PNGs de idle, reaproveita

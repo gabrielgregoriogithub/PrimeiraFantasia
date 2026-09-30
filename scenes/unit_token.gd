@@ -647,7 +647,7 @@ func spawn_bard_song_failure(song_kind: String) -> Sprite2D:
 func _advance_spd_idle(delta: float) -> void:
 	var sprite_key: String = _visual_sprite_key()
 	if ANIMAL_SPECS.has(sprite_key):
-		if unit.get("riderSpriteKey", "") != "": return
+		if _uses_mounted_art(): return
 		var key := _animal_directional_key("idle", _facing_direction())
 		var animal_anim: Array = ANIMAL_SPECS[sprite_key]["anims"].get(key, [])
 		if animal_anim.is_empty(): return
@@ -828,7 +828,7 @@ func _update_warrior_3d_visibility() -> void:
 	# sprite 2D nem o modelo 3D do herói aparecem por cima.
 	var riding: bool = unit.get("mountedOn", "") != ""
 	if _warrior_viewport_sprite != null: _warrior_viewport_sprite.visible = enabled and not riding
-	if _sprite != null: _sprite.visible = not enabled and not riding
+	if _sprite != null: _sprite.visible = not enabled and (not riding or _rides_as_overlay())
 	if _warrior_viewport != null:
 		_warrior_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if enabled else SubViewport.UPDATE_DISABLED
 
@@ -873,12 +873,32 @@ func _build_sync_snapshot() -> Array:
 		unit.get("scriptedRevive", false), unit.get("resurrectionTurns", -1),
 		unit.get("statusEffects", []).duplicate(true),
 		unit.get("footprintWidth", unit.get("footprintSize", 1)), unit.get("footprintHeight", unit.get("footprintSize", 1)),
-		unit.get("mountedOn", ""), unit.get("riderName", ""), unit.get("riderSpriteKey", ""),
+		unit.get("mountedOn", ""), unit.get("riderName", ""), unit.get("riderSpriteKey", ""), unit.get("ridingOverlay", false),
 	]
 
 ## Cavaleiro montado: desenhado menor e acima da montaria, no mesmo quadrado.
+## Só no Lobo (`ridingOverlay`) — na Vestruz quem aparece é a arte combinada.
+const RIDER_OVERLAY_LIFT := 0.30
+const RIDER_OVERLAY_SCALE := 0.8
 func _mount_offset() -> Vector2:
+	if _rides_as_overlay():
+		return Vector2(0.0, -BoardView.TILE_SIZE * RIDER_OVERLAY_LIFT)
 	return Vector2.ZERO
+
+## Montaria com arte "montado" combinada pro cavaleiro atual (Vestruz com
+## herói; Lobo com Goblin/Orc/Xamã): a dupla é UM desenho no token da
+## montaria. Vestruz sem essa arte mantém o comportamento de antes.
+## (Lobo: Goblin/Kobold/Orc/Xamã/Fada.)
+func _uses_mounted_art() -> bool:
+	if String(unit.get("riderSpriteKey", "")) == "": return false
+	return not unit.get("riderOverlay", false) or _mounted_pose_path("down") != ""
+
+## Lobo (`riderOverlay`) SEM arte combinada pra este cavaleiro: o lobo anima
+## normalmente e o cavaleiro aparece por cima, com o próprio sprite e na mesma
+## direção da montaria (sync_mounts copia o facing).
+func _rides_as_overlay() -> bool:
+	if String(unit.get("mountedOn", "")) == "" or not unit.get("ridingOverlay", false): return false
+	return mounted_art_path(String(unit.get("spriteKey", "")), String(unit.get("mountSpriteKey", "")), "down") == ""
 
 ## Sprites "idle montado" (herói + Vestruz numa imagem só, uma pose por direção):
 ## assets/heroes/<pasta do herói>/mounted_idle_<front|back|left|right>.png, todos
@@ -891,13 +911,26 @@ const MOUNTED_FOOT_MARGIN := 9.0
 const MOUNTED_SCALE_MULT := 1.2
 const MOUNTED_DIRECTION_FILE := {"down": "front", "up": "back", "left": "left", "right": "right"}
 
-func _mounted_pose_path(direction: String) -> String:
-	var rider_key: String = String(unit.get("riderSpriteKey", ""))
+## Lobo dos Goblinoides: arte "montado" combinada por cavaleiro, na pasta
+## dele — <cavaleiro>_lobo_<frente|costas|direita|esquerda>.png, normalizada
+## pro mesmo canvas/linha dos pés das artes da Vestruz (Goblin, Kobold, Orc,
+## Xamã e Fada têm). Sem o arquivo, o cavaleiro é desenhado por cima do lobo
+## (ver _rides_as_overlay).
+const WOLF_MOUNTED_DIRECTION_FILE := {"down": "frente", "up": "costas", "left": "esquerda", "right": "direita"}
+
+static func mounted_art_path(rider_key: String, mount_key: String, direction: String) -> String:
 	if rider_key == "": return ""
 	var folder: String = SpriteManifest.SPRITE_MANIFEST.get(rider_key, "")
 	if folder == "": return ""
-	var path := "%s/mounted_idle_%s.png" % [folder, MOUNTED_DIRECTION_FILE.get(direction, "front")]
+	var path := ""
+	if mount_key == "lobo":
+		path = "%s/%s_lobo_%s.png" % [folder, rider_key, WOLF_MOUNTED_DIRECTION_FILE.get(direction, "frente")]
+	else:
+		path = "%s/mounted_idle_%s.png" % [folder, MOUNTED_DIRECTION_FILE.get(direction, "front")]
 	return path if ResourceLoader.exists(path) else ""
+
+func _mounted_pose_path(direction: String) -> String:
+	return mounted_art_path(String(unit.get("riderSpriteKey", "")), String(unit.get("spriteKey", "")), direction)
 
 ## Escala pela altura da tela (igual aos outros quadros) e ancora a BASE DOS PÉS
 ## (linha fixa da tela) no chão do quadrado — nunca pelo bbox, que mudaria de
@@ -935,9 +968,11 @@ func refresh() -> void:
 	# Montado: quem aparece é a dupla (sprite "idle montado" no token da Vestruz,
 	# que mostra o HP/MP dela); o token do cavaleiro fica sem desenho, só como
 	# âncora de seleção/status.
-	scale = Vector2.ONE
-	_sprite.visible = not is_riding
+	scale = Vector2.ONE * (RIDER_OVERLAY_SCALE if _rides_as_overlay() else 1.0)
+	_sprite.visible = not is_riding or _rides_as_overlay()
 	if _shadow != null and is_riding: _shadow.visible = false
+	# Cavaleiro por cima do lobo: sempre desenhado à frente da montaria.
+	if _rides_as_overlay(): z_index += roundi(BoardView.TILE_SIZE * RIDER_OVERLAY_LIFT) + 2
 	var board := get_parent() as BoardView
 	if board != null:
 		z_index = maxi(z_index, board.structure_occupant_z(int(unit["x"]), int(unit["y"])))
@@ -1587,7 +1622,7 @@ func _movement_direction(delta: Vector2) -> String:
 func play_action(action_key: String, duration_sec: float, hold_last: bool = false, fallback_action_key: String = "") -> bool:
 	# Dupla montada: só existe a pose idle montada, sem quadros de ataque/hit da
 	# Vestruz sozinha (o flash de dano e o recuo continuam valendo).
-	if unit.get("riderSpriteKey", "") != "" and action_key != "death":
+	if _uses_mounted_art() and action_key != "death":
 		return false
 	var sprite_key: String = _visual_sprite_key()
 	if ANIMAL_SPECS.has(sprite_key):
@@ -1713,7 +1748,7 @@ func _play_spd_walk(sprite_key: String, duration_sec: float) -> bool:
 
 func _play_walk_cycle(direction: String, duration_sec: float) -> void:
 	var sprite_key: String = unit.get("spriteKey", "")
-	if unit.get("riderSpriteKey", "") != "" and _show_mounted_pose(direction):
+	if _uses_mounted_art() and _show_mounted_pose(direction):
 		return
 	if ANIMAL_SPECS.has(sprite_key):
 		_play_animal_walk(sprite_key, direction, duration_sec)

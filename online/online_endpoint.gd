@@ -369,7 +369,9 @@ func _resolve_spell(state: GameState, actor: Dictionary, item: Dictionary, targe
 		"pierce-line": state.cast_pierce_shot(actor, item, target)
 		"creeping-line": state.cast_creeping_destruction(actor, item, target)
 		"flame-creeping-line": state.cast_salamander_flame_wave(actor, item, target)
-		"cardinal-blast": state.cast_throw_log(actor, item, target)
+		"cardinal-blast":
+			if String(item.get("kind", "")) == "branch-sweep": state.cast_branch_sweep(actor, item, target)
+			else: state.cast_throw_log(actor, item, target)
 		"inflict-wounds": state.cast_inflict_wounds(actor, item, target)
 		"reanimate":
 			var reanimate_target = state.dead_unit_at(target["x"], target["y"])
@@ -383,6 +385,10 @@ func _resolve_spell(state: GameState, actor: Dictionary, item: Dictionary, targe
 			var resurrect_target = state.dead_unit_at(target["x"], target["y"])
 			if resurrect_target == null: return false
 			state.cast_resurrect(actor, resurrect_target, item)
+		"sap":
+			var sap_target = state.unit_at(target["x"], target["y"])
+			if sap_target == null: return false
+			return state.cast_restoring_sap(actor, sap_target, item)
 		"ally-clearpath":
 			var ally_target = state.unit_at(target["x"], target["y"])
 			if ally_target == null: return false

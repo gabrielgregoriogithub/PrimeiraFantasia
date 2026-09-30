@@ -19,10 +19,10 @@ func test_begin_opens_the_groups_screen_with_exactly_4_category_cards() -> void:
 	assert_eq(setup._step, "groups")
 	assert_eq(_group_card_count(), 4, "só as 4 categorias, não os ~15 monstros de uma vez")
 
-func test_goblinoides_group_shows_exactly_its_5_monsters() -> void:
+func test_goblinoides_group_shows_exactly_its_8_monsters() -> void:
 	setup._open_monster_group("goblinoides")
 	assert_eq(setup._step, "monsters")
-	assert_eq(setup._card_buttons.keys(), ["orc", "troll", "fada", "xama", "goblin"])
+	assert_eq(setup._card_buttons.keys(), ["orc", "troll", "fada", "xama", "goblin", "kobold", "troncus", "lobo"])
 
 func test_criaturas_group_shows_exactly_its_5_monsters() -> void:
 	setup._open_monster_group("criaturas")

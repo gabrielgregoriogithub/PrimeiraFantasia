@@ -20,6 +20,9 @@ const SPRITE_MANIFEST := {
 	"xama": "res://assets/enemies/xama",
 	"fada": "res://assets/enemies/fada",
 	"troll": "res://assets/enemies/troll",
+	"kobold": "res://assets/enemies/kobold",
+	"troncus": "res://assets/enemies/troncus",
+	"lobo": "res://assets/enemies/lobo",
 	# Guardians (ver data/guardian_monsters.gd) — cada pasta só tem 1 imagem
 	# estática (_idle_down_1.png = _portrait.png, mesmo arquivo), sem sprite
 	# sheet de andar/ataque como os outros grupos acima.

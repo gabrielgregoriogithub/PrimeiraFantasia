@@ -125,8 +125,17 @@ func test_ai_turn_animates_a_real_weapon_attack_end_to_end() -> void:
 		main_scene.scenario_manager.set_active(ScenarioManager.FIELD)
 		main_scene._start_new_game()
 		await wait_process_frames(1)
+	# O turno de abertura da IA roda em paralelo ao teste — espera terminar
+	# antes de armar a cena do Goblin (senão os dois laços de IA disputam).
+	var waited := 0.0
+	while main_scene._ai_sequence_running and waited < 30.0:
+		await wait_seconds(0.1)
+		waited += 0.1
+	await wait_seconds(0.8)
 	var goblin = main_scene.state.units.filter(func(u): return u.get("spriteKey", "") == "goblin")[0]
-	var hero = main_scene.state.team_units("player")[0]
+	# Herói vivo e atacável (o turno de abertura da IA pode ter derrubado o
+	# primeiro da lista; a Maga presa na gaiola não é alvo).
+	var hero = main_scene.state.team_units("player").filter(func(h): return h["hp"] > 0 and not h.get("caged", false) and not main_scene.state.is_invisible(h) and main_scene.state.in_bounds(h["x"] + 1, h["y"]) and main_scene.state.occupant_at(h["x"] + 1, h["y"]) == null)[0]
 	goblin["x"] = hero["x"] + 1
 	goblin["y"] = hero["y"]
 	goblin["hasMoved"] = true
@@ -138,7 +147,11 @@ func test_ai_turn_animates_a_real_weapon_attack_end_to_end() -> void:
 	# em test_game_state_combat.gd.
 	for w in (goblin["weapons"] as Array): w["hitChance"] = 1.0
 	main_scene.state.current_actor = goblin
-	var before: int = main_scene.effects_layer.get_child_count()
+	# Conta só efeitos NOVOS (por instância): efeitos transitórios do início
+	# da batalha (ex.: Uivo de Caça do Lobo) somem durante a espera e faziam
+	# o total cair mesmo com o VFX do golpe presente.
+	var before_ids := {}
+	for child in main_scene.effects_layer.get_children(): before_ids[child.get_instance_id()] = true
 	await main_scene._run_ai_until_player_turn()
 	assert_true(goblin["hasActed"] or goblin.get("hp", 1) <= 0)
 	# Golpe corpo a corpo agenda o impacto (_play_warrior_melee_impact) num
@@ -146,4 +159,5 @@ func test_ai_turn_animates_a_real_weapon_attack_end_to_end() -> void:
 	# pausas "de apresentação" e é pulado em headless) — espera esse timer
 	# disparar antes de checar o VFX.
 	await wait_seconds(0.4)
-	assert_gt(main_scene.effects_layer.get_child_count(), before, "o ataque da Goblin agora gera VFX de verdade, não só a pose genérica")
+	var new_effects: int = main_scene.effects_layer.get_children().filter(func(child): return not before_ids.has(child.get_instance_id())).size()
+	assert_gt(new_effects, 0, "o ataque da Goblin agora gera VFX de verdade, não só a pose genérica")

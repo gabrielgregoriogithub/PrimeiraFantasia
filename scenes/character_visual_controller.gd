@@ -89,7 +89,7 @@ static func profile_for_unit(unit: Dictionary) -> String:
 	var key := String(unit.get("spriteKey", ""))
 	var footprint := maxi(int(unit.get("footprintWidth", unit.get("footprintSize", 1))), int(unit.get("footprintHeight", unit.get("footprintSize", 1))))
 	if footprint > 1: return "giant"
-	if key in ["ladino", "fada", "goblin", "spd_rat", "spd_snake", "fantasma"]: return "light"
+	if key in ["ladino", "fada", "goblin", "kobold", "lobo", "spd_rat", "spd_snake", "fantasma"]: return "light"
 	if key in ["guerreiro", "orc", "troll", "zumbi", "esqueleto", "spd_gnoll", "spd_goo"]: return "heavy"
 	return "medium"
 

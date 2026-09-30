@@ -101,7 +101,7 @@ const GUARDIAN_MONSTER_KEYS := [
 ## nenhum "if monstro == x" espalhado pela UI. Fácil de expandir: um novo
 ## monstro só entra numa lista aqui (e nos catálogos de origem, se for novo).
 const MONSTER_GROUPS := {
-	"goblinoides": {"label": "Goblinoides", "icon": "🪓", "monsters": ["orc", "troll", "fada", "xama", "goblin"]},
+	"goblinoides": {"label": "Goblinoides", "icon": "🪓", "monsters": ["orc", "troll", "fada", "xama", "goblin", "kobold", "troncus", "lobo"]},
 	"criaturas": {"label": "Criaturas", "icon": "🐾", "monsters": ["rat", "snake", "gnoll", "goo", "slime"]},
 	"undead": {"label": "Mortos-Vivos", "icon": "💀", "monsters": ["vampire", "lich", "skeleton", "zombie", "ghost"]},
 	"fire": {"label": "Elementais do Fogo", "icon": "🔥", "monsters": ["living_fire", "lava_human", "salamander", "dragon", "flame_demon"]},
@@ -612,6 +612,8 @@ func _show_monster_info(key: String) -> void:
 		portrait_center.add_child(portrait)
 		_info_content.add_child(portrait_center)
 
+	if monster.has("description"):
+		_add_info_text(String(monster["description"]), Color("c9d2dc"))
 	_add_info_text("❤️ HP %d    ✧ MP %d    🏃 Deslocamento %d    ⚡ Agilidade %d" % [
 		int(monster.get("maxHp", 0)), int(monster.get("maxMp", 0)),
 		int(monster.get("moveRange", 0)), int(monster.get("speed", 0)),
@@ -633,8 +635,17 @@ func _show_monster_info(key: String) -> void:
 		for spell in spells:
 			_add_info_text("• %s" % _item_summary(spell), Color("d8c7ff"))
 
-	var affinities: Dictionary = monster.get("elementAffinity", {})
-	var immunities: Array = monster.get("statusImmunities", [])
+	var passives: Array = monster.get("passives", [])
+	if not passives.is_empty():
+		_add_info_heading("Passivas")
+		for passive in passives:
+			_add_info_text("• %s: %s" % [passive["name"], passive["description"]], Color("d8c7ff"))
+
+	var affinities: Dictionary = monster.get("elementAffinity", {}).duplicate()
+	for element in affinities.keys():
+		if (affinities[element] as Dictionary).has("passive"): affinities.erase(element)
+	var passive_statuses: Array = passives.map(func(passive): return passive.get("status", ""))
+	var immunities: Array = (monster.get("statusImmunities", []) as Array).filter(func(status): return not passive_statuses.has(status))
 	if not affinities.is_empty() or not immunities.is_empty():
 		_add_info_heading("Elemental")
 		var element_labels := {"fire": "Fogo", "ice": "Gelo", "lightning": "Relâmpago"}

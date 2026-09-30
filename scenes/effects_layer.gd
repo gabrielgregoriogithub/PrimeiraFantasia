@@ -79,6 +79,13 @@ class VfxShape extends Node2D:
 				draw_rect(Rect2(Vector2(-radius, -radius), Vector2(radius * 2.0, radius * 2.0)), color)
 			"ring":
 				draw_arc(Vector2.ZERO, radius, 0.0, TAU, 40, color, maxf(2.0, radius * 0.10), true)
+			"howl-wave":
+				# Uivo de Caça: arco de onda sonora aberto pra cima.
+				draw_arc(Vector2.ZERO, radius, -PI * 0.82, -PI * 0.18, 20, color, maxf(2.0, radius * 0.12), true)
+			"howl-chevron":
+				# Bônus de agilidade: seta dupla subindo.
+				draw_polyline(PackedVector2Array([Vector2(-radius, radius * 0.5), Vector2(0, -radius * 0.3), Vector2(radius, radius * 0.5)]), color, 2.5, true)
+				draw_polyline(PackedVector2Array([Vector2(-radius, radius * 1.2), Vector2(0, radius * 0.4), Vector2(radius, radius * 1.2)]), Color(color, 0.6), 2.0, true)
 			"slash":
 				draw_arc(Vector2.ZERO, radius, -1.15, 1.15, 18, color, 3.5, true)
 				draw_arc(Vector2.ZERO, radius * 0.72, -0.95, 0.95, 14, Color(color, 0.5), 1.5, true)
@@ -1279,6 +1286,35 @@ func spawn_heal_absorb(center: Vector2, color: Color = Color("6fe08a")) -> void:
 		tween.tween_property(mote, "modulate:a", 0.0, 0.42)
 		tween.set_parallel(false).tween_callback(mote.queue_free)
 	spawn_burst(center, 25.0, color, 0.38, "heal")
+
+## Uivo de Caça: ondas sonoras em arco que nascem acima da cabeça do lobo,
+## sobem, abrem e somem, uma atrás da outra.
+func spawn_howl_waves(center: Vector2, color: Color = Color("dfe8ff")) -> void:
+	for i in 4:
+		var wave := VfxShape.new("howl-wave", 9.0, Color(color, 0.9))
+		wave.position = center + Vector2(0, -34)
+		wave.z_index = 6
+		wave.modulate.a = 0.0
+		add_child(wave)
+		var tween := create_tween()
+		tween.tween_interval(float(i) * 0.16)
+		tween.tween_property(wave, "modulate:a", 1.0, 0.06)
+		tween.tween_property(wave, "position", wave.position + Vector2(0, -46), 0.7).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		tween.parallel().tween_property(wave, "scale", Vector2.ONE * 2.4, 0.7)
+		tween.parallel().tween_property(wave, "modulate:a", 0.0, 0.7).set_ease(Tween.EASE_IN)
+		tween.tween_callback(wave.queue_free)
+
+## Aliado atingido pelo Uivo: anel curto nos pés e setas subindo (+AGI).
+func spawn_howl_buff(center: Vector2, color: Color = Color("ffd66b")) -> void:
+	spawn_shockwave(center + Vector2(0, 14), color, 26.0, 0.32)
+	var chevron := VfxShape.new("howl-chevron", 7.0, color)
+	chevron.position = center + Vector2(0, -6)
+	chevron.z_index = 6
+	add_child(chevron)
+	var tween := create_tween()
+	tween.tween_property(chevron, "position", chevron.position + Vector2(0, -30), 0.6).set_trans(Tween.TRANS_SINE)
+	tween.parallel().tween_property(chevron, "modulate:a", 0.0, 0.6).set_ease(Tween.EASE_IN)
+	tween.tween_callback(chevron.queue_free)
 
 func spawn_regen_cue(center: Vector2, color: Color = Color("70e895")) -> void:
 	for i in 5:

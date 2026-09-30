@@ -1267,7 +1267,7 @@ func _refresh_turn_queue() -> void:
 				portrait.tooltip_text += "\nMontado na %s — HP %d/%d, MP %d/%d (a dupla age neste turno; os golpes recebidos ferem a montaria)" % [queue_mount["name"], queue_mount["hp"], queue_mount["maxHp"], queue_mount["mp"], queue_mount["maxMp"]]
 		slot.add_child(portrait)
 		var name_label := Label.new()
-		name_label.text = (("☠ " if is_corpse else "▶ ") if is_current or is_corpse else "%d. " % (index + 1)) + String(unit["name"]) + (" 🐦" if unit.get("mountedOn", "") != "" else "")
+		name_label.text = (("☠ " if is_corpse else "▶ ") if is_current or is_corpse else "%d. " % (index + 1)) + String(unit["name"]) + ((" " + String(state.mount_of(unit).get("icon", "🐦"))) if state.mount_of(unit) != null else "")
 		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		name_label.add_theme_font_size_override("font_size", 9)
@@ -1546,6 +1546,8 @@ func _open_unit_info(unit: Dictionary) -> void:
 		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		_unit_info_content.add_child(portrait)
+	if unit.has("description"):
+		_add_info_text(String(unit["description"]), Color("c9d2dc"))
 	_add_info_heading("Atributos atuais")
 	_add_info_text("❤️ HP %d/%d    ✦ CT %d/100    ✧ MP %d/%d" % [maxi(unit.get("hp", 0), 0), unit.get("maxHp", 0), unit.get("ct", 0), unit.get("mp", 0), unit.get("maxMp", 0)])
 	_add_info_text("🏃 Deslocamento %d    ⚡ Agilidade %d    ↔ Posição (%d, %d)" % [unit.get("moveRange", 0), unit.get("speed", 0), unit.get("x", 0), unit.get("y", 0)])
@@ -1574,6 +1576,10 @@ func _open_unit_info(unit: Dictionary) -> void:
 
 func _unit_passive_texts(unit: Dictionary) -> Array[String]:
 	var result: Array[String] = []
+	# Passivas nomeadas declaradas nos dados (ex.: Kobold) — já descrevem a
+	# afinidade que marcam com "passive", então essa não se repete abaixo.
+	for passive in unit.get("passives", []):
+		result.append("%s: %s" % [passive["name"], passive["description"]])
 	if unit.get("passiveDamageReduction", 0) > 0: result.append("Armadura: reduz %d de todo dano recebido." % unit["passiveDamageReduction"])
 	if not (unit.get("backstabBonus", {}) as Dictionary).is_empty():
 		var backstab: Dictionary = unit["backstabBonus"]
@@ -1581,7 +1587,8 @@ func _unit_passive_texts(unit: Dictionary) -> Array[String]:
 	if unit.get("hasOpportunityAttack", false): result.append("Ataque de oportunidade contra inimigos que se afastam.")
 	if unit.get("magicEvasion", 0.0) > 0: result.append("Esquiva mágica: -%d%% na chance de magias acertarem." % roundi(unit["magicEvasion"] * 100.0))
 	if unit.get("innateEvasion", 0.0) > 0: result.append("Esquiva inata: -%d%% na chance de ser atingido." % roundi(unit["innateEvasion"] * 100.0))
-	if unit.get("counterAttackChance", 0.0) > 0: result.append("Contra-ataque: %d%% de chance de revidar ataques próximos." % roundi(unit["counterAttackChance"] * 100.0))
+	# Lobo: o contra-ataque já aparece como a passiva nomeada "Contra-ataque de Mordida".
+	if unit.get("counterAttackChance", 0.0) > 0 and not unit.get("counterMeleeOnly", false): result.append("Contra-ataque: %d%% de chance de revidar ataques próximos." % roundi(unit["counterAttackChance"] * 100.0))
 	if unit.get("flying", false): result.append("Voador: ignora terreno e só é atingido por ataques à distância ou magia.")
 	if unit.get("hpRegenPerTurn", 0) > 0: result.append("Regeneração natural: recupera %d HP por turno." % unit["hpRegenPerTurn"])
 	# Pedido do usuário (Demônio das Chamas): não existia UI nenhuma pra
@@ -1594,6 +1601,7 @@ func _unit_passive_texts(unit: Dictionary) -> Array[String]:
 		var element_labels := {"fire": "Fogo", "ice": "Gelo", "lightning": "Relâmpago", "physical": "Físico", "magic": "Mágico"}
 		for element in affinities:
 			var aff: Dictionary = affinities[element]
+			if aff.has("passive"): continue
 			var label: String = element_labels.get(element, String(element).capitalize())
 			if aff.get("mode", "damage") == "heal":
 				result.append("%s: absorve — dano desse elemento cura em vez de ferir." % label)
@@ -1606,7 +1614,9 @@ func _unit_passive_texts(unit: Dictionary) -> Array[String]:
 	var immunities: Array = unit.get("statusImmunities", [])
 	if not immunities.is_empty():
 		var status_labels := {"burned": "Queimando", "poison": "Envenenado", "bleed": "Sangrando", "paralyzed": "Paralisado", "blinded": "Ofuscado", "root": "Enraizado"}
+		var passive_statuses: Array = (unit.get("passives", []) as Array).map(func(passive): return passive.get("status", ""))
 		for status in immunities:
+			if passive_statuses.has(status): continue
 			result.append("Imune a %s." % status_labels.get(status, String(status).capitalize()))
 	return result
 
@@ -1630,7 +1640,7 @@ func _add_item_cards(items: Array) -> void:
 
 func _status_card_text(effect: Dictionary) -> String:
 	var type: String = effect.get("type", "")
-	var labels := {"poison":"☠ Envenenado", "bleed":"◆ Sangrando", "root":"⌘ Enraizado", "burned":"🔥 Queimando", "regen":"✚ Regeneração", "regenBoost":"✚ Regeneração ampliada", "weakened":"↓ Enfraquecido", "paralyzed":"⚡ Paralisado", "dazed":"✹ Atordoado", "blinded":"◉ Cego", "slowed":"↓ Lentidão", "guarding":"🛡 Protegido", "focus":"🧘 Foco — bloqueia ataque físico e reduz magia pela metade", "heronStance":"🦢 Postura da Garça — +25% de esquiva e contra-ataque", "guardBroken":"💥 Guarda Quebrada — +1 de dano por ataque recebido", "dustBlind":"🌫 Poeira nos olhos — -20% de acerto", "fury":"⚔ Fúria", "invisible":"◌ Invisível", "evasive":"↝ Evasivo", "swiftFeet":"» Pés Ágeis", "bardInspiration":"♫ Inspirado pelo Bardo", "batForm":"🦇 Forma de Morcego", "reincarnation":"♻️ Selo de Reencarnação"}
+	var labels := {"poison":"☠ Envenenado", "bleed":"◆ Sangrando", "root":"⌘ Enraizado", "burned":"🔥 Queimando", "regen":"✚ Regeneração", "regenBoost":"✚ Regeneração ampliada", "weakened":"↓ Enfraquecido", "paralyzed":"⚡ Paralisado", "dazed":"✹ Atordoado", "blinded":"◉ Cego", "slowed":"↓ Lentidão", "guarding":"🛡 Protegido", "focus":"🧘 Foco — bloqueia ataque físico e reduz magia pela metade", "heronStance":"🦢 Postura da Garça — +25% de esquiva e contra-ataque", "guardBroken":"💥 Guarda Quebrada — +1 de dano por ataque recebido", "dustBlind":"🌫 Poeira nos olhos — -20% de acerto", "fury":"⚔ Fúria", "invisible":"◌ Invisível", "evasive":"↝ Evasivo", "swiftFeet":"» Pés Ágeis", "bardInspiration":"♫ Inspirado pelo Bardo", "batForm":"🦇 Forma de Morcego", "reincarnation":"♻️ Selo de Reencarnação", "vineSlow":"🌿 Enredado por cipós — -1 de deslocamento", "barkArmor":"🪵 Casca Fortificada — -25% de dano físico", "huntHowl":"🌕 Uivo de Caça — +2 de agilidade"}
 	var result: String = labels.get(type, type.capitalize())
 	if effect.has("turnsLeft"): result += " — %d turno(s) restante(s)" % effect["turnsLeft"]
 	var details: Array[String] = []
@@ -2484,8 +2494,11 @@ func _render_menu_root() -> void:
 		for candidate in state.units:
 			if candidate.get("isMount", false) and candidate["team"] == u["team"] and candidate["hp"] > 0 and candidate != u and state.manhattan(u, candidate) == 1 and candidate.get("riderName", "") == "":
 				var mount_ref: Dictionary = candidate
-				var mount_button := _add_menu_button("🐦 Montar na %s" % candidate["name"], func(): _request_mount_confirmation(u, mount_ref), not state.can_mount(u, candidate))
-				mount_button.tooltip_text = "Sobe na montaria adjacente. A dupla ocupa o mesmo quadrado, voa e age no turno do cavaleiro."
+				var mount_button := _add_menu_button("%s Montar em %s" % [String(candidate.get("icon", "🐦")), candidate["name"]], func(): _request_mount_confirmation(u, mount_ref), not state.can_mount(u, candidate))
+				if candidate.get("mountRiderGroup", "") == "goblinoides":
+					mount_button.tooltip_text = "Sobe no lobo adjacente (só goblinoides de 1 quadrado). A dupla ocupa o mesmo quadrado e age no turno do cavaleiro."
+				else:
+					mount_button.tooltip_text = "Sobe na montaria adjacente. A dupla ocupa o mesmo quadrado, voa e age no turno do cavaleiro."
 	_add_menu_button("🏁 Encerrar Turno", _on_menu_end_turn_pressed)
 	_add_menu_button("Cancelar", func(): _close_action_menu())
 
@@ -2767,6 +2780,10 @@ func _compute_targetable_tiles(u: Dictionary, item: Dictionary, target_mode: Str
 		return state.compute_vestruz_dash_tiles(u, item)
 	if target_mode == "dust-square" or target_mode == "heal-cross":
 		return [{"x": u["x"], "y": u["y"]}]
+	if target_mode == "sap":
+		return state.compute_range_tiles(u, item).filter(func(t):
+			var ally = state.unit_at(t["x"], t["y"])
+			return ally != null and ally["team"] == u["team"])
 	if target_mode == "dismount":
 		return state.dismount_tiles(u)
 	# Chute do Dragão: mesma mira do Relâmpago da Maga — só linhas retas (4
@@ -3457,8 +3474,9 @@ func _play_self_ability_vfx(u: Dictionary, item: Dictionary) -> void:
 	var visual_kind := "nature" if kind in ["regen", "heal"] else kind
 	if kind == "hit-and-run": visual_kind = "goblin-dash"
 	elif kind in ["poison-potion", "sand-in-eyes", "low-blow"]: visual_kind = "poison" if kind == "poison-potion" else "goblin-sand"
-	elif kind == "power-attack" and String(item.get("name", "")) == "Emboscada Goblin": visual_kind = "goblin-ambush"
+	elif kind == "power-attack" and String(item.get("name", "")) == "Emboscada Kobold": visual_kind = "goblin-ambush"
 	elif kind == "play-dead": visual_kind = "goblin-feign"
+	elif kind == "bark-armor": visual_kind = "nature"
 	if kind.begins_with("bard-song-"):
 		visual_kind = "nature" if item.get("songKind", "") == "heal" else "arcane"
 		AudioEngine.play_sfx(item.get("sfx", "arcane"), AudioEngine.pan_for_x(int(u["x"])))
@@ -3703,6 +3721,11 @@ func _apply_spell(u: Dictionary, item: Dictionary, x: int, y: int) -> void:
 			if target != null:
 				_play_target_spell_vfx(u, target, item, "nature")
 				state.cast_root_spell(u, target, item)
+		"sap":
+			var target = state.unit_at(x, y)
+			if target != null and target["team"] == u["team"]:
+				_play_target_spell_vfx(u, target, item, "nature")
+				state.cast_restoring_sap(u, target, item)
 		"ally-clearpath":
 			var target = state.unit_at(x, y)
 			if target != null:
@@ -3750,7 +3773,10 @@ func _apply_spell(u: Dictionary, item: Dictionary, x: int, y: int) -> void:
 		"flame-creeping-line":
 			state.cast_salamander_flame_wave(u, item, {"x": x, "y": y})
 		"cardinal-blast":
-			state.cast_throw_log(u, item, {"x": x, "y": y})
+			if item.get("kind", "") == "branch-sweep":
+				state.cast_branch_sweep(u, item, {"x": x, "y": y})
+			else:
+				state.cast_throw_log(u, item, {"x": x, "y": y})
 		"pierce-line":
 			state.cast_pierce_shot(u, item, {"x": x, "y": y})
 		"summon":
@@ -4446,6 +4472,22 @@ func _sync_visuals() -> void:
 			var affected_token = unit_tokens.get(event.get("targetName", ""))
 			if affected_token != null:
 				(affected_token as UnitToken).spawn_bard_song_notes(event.get("songKind", ""))
+	# Uivo de Caça (Lobo): som de uivo + ondas subindo acima de quem uivou e
+	# um brilho de bônus em cada aliado atingido (efeito já aplicado).
+	if not state.hunt_howl_events.is_empty():
+		var howl_events: Array = state.hunt_howl_events.duplicate(true)
+		state.hunt_howl_events.clear()
+		for event in howl_events:
+			var howler_token = unit_tokens.get(event.get("casterName", ""))
+			if howler_token != null:
+				var howler: Dictionary = (howler_token as UnitToken).unit
+				effects_layer.spawn_howl_waves(board_view.tile_center(howler["x"], howler["y"]))
+				AudioEngine.play_sfx("wolfHowl", AudioEngine.pan_for_x(int(howler["x"])))
+			for target_name in event.get("targetNames", []):
+				var buffed_token = unit_tokens.get(target_name)
+				if buffed_token != null:
+					var buffed: Dictionary = (buffed_token as UnitToken).unit
+					effects_layer.spawn_howl_buff(board_view.tile_center(buffed["x"], buffed["y"]))
 	if not state.bard_song_feedback_events.is_empty():
 		var feedback_events: Array = state.bard_song_feedback_events.duplicate(true)
 		state.bard_song_feedback_events.clear()
